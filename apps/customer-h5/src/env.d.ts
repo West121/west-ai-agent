@@ -1,0 +1,10 @@
+/// <reference types="vite/client" />
+
+interface ImportMetaEnv {
+  readonly VITE_PLATFORM_API_BASE_URL?: string;
+  readonly VITE_MESSAGE_GATEWAY_WS_URL?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
