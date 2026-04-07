@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.modules.auth.dependencies import require_permissions
 from app.modules.conversation.crud import (
     create_conversation,
     end_conversation,
@@ -30,27 +31,45 @@ router = APIRouter(prefix="/conversation", tags=["conversation"])
 
 
 @router.post("/conversations", response_model=ConversationRead, status_code=201)
-def post_conversation(payload: ConversationCreate, db: Session = Depends(get_db)) -> ConversationRead:
+def post_conversation(
+    payload: ConversationCreate,
+    _: object = Depends(require_permissions("conversation.write")),
+    db: Session = Depends(get_db),
+) -> ConversationRead:
     return create_conversation(db, payload)
 
 
 @router.get("/conversations", response_model=list[ConversationRead])
-def get_conversations(db: Session = Depends(get_db)) -> list[ConversationRead]:
+def get_conversations(
+    _: object = Depends(require_permissions("conversation.read")),
+    db: Session = Depends(get_db),
+) -> list[ConversationRead]:
     return list_conversations(db)
 
 
 @router.get("/conversations/history", response_model=ConversationHistoryListResponse)
-def get_conversation_history(db: Session = Depends(get_db)) -> ConversationHistoryListResponse:
+def get_conversation_history(
+    _: object = Depends(require_permissions("conversation.read")),
+    db: Session = Depends(get_db),
+) -> ConversationHistoryListResponse:
     return ConversationHistoryListResponse(items=list_conversation_history(db))
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationRead)
-def get_conversation_detail(conversation_id: int, db: Session = Depends(get_db)) -> ConversationRead:
+def get_conversation_detail(
+    conversation_id: int,
+    _: object = Depends(require_permissions("conversation.read")),
+    db: Session = Depends(get_db),
+) -> ConversationRead:
     return get_conversation(db, conversation_id)
 
 
 @router.get("/conversations/{conversation_id}/summary", response_model=ConversationSummaryRead)
-def get_conversation_summary_detail(conversation_id: int, db: Session = Depends(get_db)) -> ConversationSummaryRead:
+def get_conversation_summary_detail(
+    conversation_id: int,
+    _: object = Depends(require_permissions("conversation.read")),
+    db: Session = Depends(get_db),
+) -> ConversationSummaryRead:
     summary = get_conversation_summary(db, conversation_id)
     satisfaction = get_satisfaction(db, conversation_id)
     return ConversationSummaryRead(
@@ -63,12 +82,22 @@ def get_conversation_summary_detail(conversation_id: int, db: Session = Depends(
 
 
 @router.post("/conversations/{conversation_id}/transfer", response_model=ConversationRead)
-def post_transfer(conversation_id: int, payload: ConversationTransfer, db: Session = Depends(get_db)) -> ConversationRead:
+def post_transfer(
+    conversation_id: int,
+    payload: ConversationTransfer,
+    _: object = Depends(require_permissions("conversation.write")),
+    db: Session = Depends(get_db),
+) -> ConversationRead:
     return transfer_conversation(db, conversation_id, payload)
 
 
 @router.post("/conversations/{conversation_id}/end", response_model=ConversationRead)
-def post_end(conversation_id: int, payload: ConversationEnd, db: Session = Depends(get_db)) -> ConversationRead:
+def post_end(
+    conversation_id: int,
+    payload: ConversationEnd,
+    _: object = Depends(require_permissions("conversation.write")),
+    db: Session = Depends(get_db),
+) -> ConversationRead:
     return end_conversation(db, conversation_id, payload)
 
 
@@ -76,6 +105,7 @@ def post_end(conversation_id: int, payload: ConversationEnd, db: Session = Depen
 def post_satisfaction(
     conversation_id: int,
     payload: SatisfactionCreate,
+    _: object = Depends(require_permissions("conversation.write")),
     db: Session = Depends(get_db),
 ) -> SatisfactionRead:
     satisfaction = upsert_satisfaction(db, conversation_id, payload)
@@ -89,7 +119,11 @@ def post_satisfaction(
 
 
 @router.get("/conversations/{conversation_id}/satisfaction", response_model=SatisfactionRead | None)
-def get_conversation_satisfaction(conversation_id: int, db: Session = Depends(get_db)) -> SatisfactionRead | None:
+def get_conversation_satisfaction(
+    conversation_id: int,
+    _: object = Depends(require_permissions("conversation.read")),
+    db: Session = Depends(get_db),
+) -> SatisfactionRead | None:
     satisfaction = get_satisfaction(db, conversation_id)
     if satisfaction is None:
         return None

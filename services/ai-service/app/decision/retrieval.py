@@ -19,6 +19,31 @@ def _tokenize(text: str) -> tuple[str, ...]:
     return tuple(tokens)
 
 
+def _compact_text(text: str) -> str:
+    return "".join(char for char in text.lower() if char.isalnum())
+
+
+def _overlap_score(query: str, searchable_text: str) -> float:
+    compact_query = _compact_text(query)
+    compact_searchable = _compact_text(searchable_text)
+    if not compact_query or not compact_searchable:
+        return 0.0
+    if compact_query in compact_searchable:
+        return 1.0
+    if len(compact_query) < 4:
+        return 0.0
+
+    fragments = {
+        compact_query[index : index + 2]
+        for index in range(0, len(compact_query) - 1)
+        if compact_query[index : index + 2].strip()
+    }
+    if not fragments:
+        return 0.0
+    matched = sum(1 for fragment in fragments if fragment in compact_searchable)
+    return matched / len(fragments)
+
+
 def build_default_documents() -> tuple[KnowledgeDocument, ...]:
     settings = get_settings()
     registry = build_provider_registry(settings)
@@ -29,6 +54,17 @@ def build_default_documents() -> tuple[KnowledgeDocument, ...]:
     provider_names = ", ".join(registry.keys())
 
     return (
+        KnowledgeDocument(
+            id="refund-arrival-zh",
+            title="退款到账说明",
+            body=(
+                "退款多久到账？ 原路退款一般多久到账？ 一般情况下原路退款会在 1 到 3 个工作日到账。 "
+                "如果银行处理较慢，可能延长到 5 个工作日。"
+            ),
+            summary="回答退款多久到账与到账时效问题。",
+            answer="一般情况下原路退款会在 1 到 3 个工作日到账。若银行处理较慢，可能延长到 5 个工作日。",
+            tags=("退款", "到账", "中文"),
+        ),
         KnowledgeDocument(
             id="provider-selection",
             title="Default provider selection",
@@ -160,14 +196,22 @@ class RetrievalService:
 
         max_score = max(float(hit.get("_score") or 0.0) for hit in raw_hits) or 1.0
         parsed_hits: list[RetrievalHit] = []
+        unique_terms = tuple(dict.fromkeys(rewrite.tokens))
         for raw_hit in raw_hits:
             source = dict(raw_hit.get("_source", {}))
             document = self._map_hit_to_document(source, str(raw_hit.get("_id", "")))
-            matched_terms = tuple(term for term in dict.fromkeys(rewrite.tokens) if term in _tokenize(self._searchable_text(source)))
+            searchable_text = self._searchable_text(source)
+            searchable_tokens = set(_tokenize(searchable_text))
+            matched_terms = tuple(term for term in unique_terms if term in searchable_tokens)
+            overlap_score = _overlap_score(rewrite.normalized_query, searchable_text)
+            term_score = len(matched_terms) / len(unique_terms) if unique_terms else 0.0
+            if not matched_terms and overlap_score < 0.3:
+                continue
+            score = max(overlap_score, term_score)
             parsed_hits.append(
                 RetrievalHit(
                     document=document,
-                    score=min(float(raw_hit.get("_score") or 0.0) / max_score, 1.0),
+                    score=score,
                     matched_terms=matched_terms,
                 )
             )

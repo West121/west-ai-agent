@@ -27,6 +27,13 @@
     "mobile:android:build:release": "bash ./scripts/mobile-flutter-android-build.sh release",
     "test:smoke": "node ./scripts/run-smoke.mjs",
     "test:smoke:local": "node ./scripts/smoke-stack.mjs",
+    "test:rag-eval": "node ./scripts/run-rag-eval.mjs",
+    "test:rag-eval:local": "node ./scripts/rag-eval.mjs",
+    "test:rag-eval:unit": "node --test tests/evals/rag-eval-lib.test.mjs",
+    "test:customer-load": "node ./scripts/run-customer-load.mjs",
+    "test:customer-load:local": "node ./scripts/customer-load.mjs",
+    "test:customer-load:unit": "node --test tests/evals/customer-load-lib.test.mjs",
+    "test:advanced": "pnpm test:rag-eval && pnpm test:customer-load",
     "verify": "pnpm typecheck && pnpm build && pnpm test:platform-api && pnpm test:message-gateway && pnpm test:ai-service && pnpm test:worker-jobs"
   },
   "devDependencies": {

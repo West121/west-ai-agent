@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.db import Base
 from app.modules.knowledge.models import KnowledgeDocument
+from app.testing.auth_utils import override_authenticated_user, seed_authenticated_user
 
 
 @pytest.fixture()
@@ -40,6 +41,8 @@ def client(db_session: Session) -> TestClient:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    user = seed_authenticated_user(db_session, permissions=["knowledge.read", "knowledge.write"])
+    override_authenticated_user(app, user)
     return TestClient(app)
 
 

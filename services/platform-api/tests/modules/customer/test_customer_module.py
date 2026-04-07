@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.db import Base
 from app.modules.customer.models import BlacklistEntry, CustomerProfile, Tag
 from app.modules.customer.router import router as customer_router
+from app.testing.auth_utils import override_authenticated_user, seed_authenticated_user
 
 
 @pytest.fixture()
@@ -41,6 +42,8 @@ def client(db_session: Session) -> TestClient:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    user = seed_authenticated_user(db_session, permissions=["customer.read", "customer.write"])
+    override_authenticated_user(app, user)
     return TestClient(app)
 
 
@@ -97,4 +100,3 @@ def test_blacklist_crud(client: TestClient) -> None:
 
     deleted = client.delete(f"/customer/blacklist/{blacklist_id}")
     assert deleted.status_code == 204
-

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session, selectinload
@@ -31,3 +33,22 @@ def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+def require_permissions(*required_permissions: str) -> Callable[[User], User]:
+    def dependency(current_user: User = Depends(get_current_user)) -> User:
+        granted_permissions = {
+            permission.name
+            for permission in (current_user.role.permissions if current_user.role is not None else [])
+        }
+        missing_permissions = [
+            permission for permission in required_permissions if permission not in granted_permissions
+        ]
+        if missing_permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permissions: {', '.join(missing_permissions)}",
+            )
+        return current_user
+
+    return dependency

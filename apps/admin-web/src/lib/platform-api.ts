@@ -130,6 +130,42 @@ export type Conversation = {
   updated_at: string;
 };
 
+export type ExportSourceKind = 'tickets' | 'leave_messages' | 'conversation_history' | 'knowledge_documents';
+
+export type ExportTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export type ExportTask = {
+  id: number;
+  name: string;
+  source_kind: ExportSourceKind;
+  format: string;
+  status: ExportTaskStatus;
+  row_count: number | null;
+  download_url: string | null;
+  last_error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExportTaskCreateInput = {
+  name: string;
+  source_kind: ExportSourceKind;
+  format: string;
+};
+
+export type ExportTaskDownload = {
+  task_id: number;
+  name: string;
+  source_kind: ExportSourceKind;
+  format: string;
+  status: ExportTaskStatus;
+  row_count: number;
+  download_url: string;
+  generated_at: string;
+};
+
 export type ChannelApp = {
   id: number;
   name: string;
@@ -258,6 +294,63 @@ export type SatisfactionRecord = {
 export type SatisfactionCreateInput = {
   score: number;
   comment?: string | null;
+};
+
+export type VideoSession = {
+  id: number;
+  customer_profile_id: number;
+  conversation_id: number | null;
+  assignee: string | null;
+  status: string;
+  ticket_id: number | null;
+  started_at: string;
+  ended_at: string | null;
+  ended_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  snapshot_count: number;
+  latest_snapshot_at: string | null;
+};
+
+export type VideoSessionListResponse = {
+  items: VideoSession[];
+};
+
+export type VideoSessionStartInput = {
+  customer_profile_id?: number | null;
+  conversation_id?: number | null;
+  assignee?: string | null;
+};
+
+export type VideoSessionEndInput = {
+  reason?: string | null;
+};
+
+export type VideoSessionTransferTicketInput = {
+  title?: string | null;
+  status?: string;
+  priority?: string;
+  source?: string;
+  assignee?: string | null;
+  assignee_group?: string | null;
+  summary?: string | null;
+};
+
+export type VideoSnapshot = {
+  id: number;
+  session_id: number;
+  label: string;
+  note: string | null;
+  created_at: string;
+};
+
+export type VideoSnapshotListResponse = {
+  items: VideoSnapshot[];
+};
+
+export type VideoSnapshotCreateInput = {
+  label?: string | null;
+  note?: string | null;
 };
 
 function buildUrl(path: string): URL {

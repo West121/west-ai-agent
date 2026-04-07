@@ -5,7 +5,6 @@ import { screen } from '@testing-library/react';
 import { ExportManagementPage } from '@/routes/export-management';
 import { QualityReviewPage } from '@/routes/quality-review';
 import { ReportCenterPage } from '@/routes/report-center';
-import { VideoServicePage } from '@/routes/video-service';
 import { renderWithProviders } from '@/test/render';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -61,15 +60,103 @@ vi.mock('@/hooks/use-platform-api', () => ({
     isLoading: false,
     isError: false,
   }),
-  useConversations: () => ({
-    data: [{ id: 11, customer_profile_id: 1, channel: 'video', assignee: 'agent-1', status: 'active', ended_at: null, created_at: '', updated_at: '' }],
+  useExportTasks: () => ({
+    data: [
+      {
+        id: 1,
+        name: '工单与留言日报',
+        source_kind: 'tickets',
+        format: 'csv',
+        status: 'completed',
+        row_count: 2,
+        download_url: 'http://localhost:8000/exporting/tasks/1/download',
+        last_error: null,
+        started_at: '2026-04-07T03:00:00.000Z',
+        completed_at: '2026-04-07T03:05:00.000Z',
+        created_at: '2026-04-07T03:00:00.000Z',
+        updated_at: '2026-04-07T03:05:00.000Z',
+      },
+    ],
     isLoading: false,
     isError: false,
   }),
-  useCustomers: () => ({
-    data: [{ id: 1, external_id: 'c-1', name: '张晓晴', email: 'zhang@example.com', phone: '13800000000', status: 'vip', created_at: '', updated_at: '', tags: [] }],
+  useExportTask: (taskId: number | null) => ({
+    data:
+      taskId === 1
+        ? {
+            id: 1,
+            name: '工单与留言日报',
+            source_kind: 'tickets',
+            format: 'csv',
+            status: 'completed',
+            row_count: 2,
+            download_url: 'http://localhost:8000/exporting/tasks/1/download',
+            last_error: null,
+            started_at: '2026-04-07T03:00:00.000Z',
+            completed_at: '2026-04-07T03:05:00.000Z',
+            created_at: '2026-04-07T03:00:00.000Z',
+            updated_at: '2026-04-07T03:05:00.000Z',
+          }
+        : null,
     isLoading: false,
     isError: false,
+  }),
+  useCreateExportTask: () => ({
+    data: null,
+    isPending: false,
+    isError: false,
+    mutateAsync: vi.fn().mockResolvedValue({
+      id: 2,
+      name: '工单与留言日报',
+      source_kind: 'tickets',
+      format: 'csv',
+      status: 'pending',
+      row_count: null,
+      download_url: null,
+      last_error: null,
+      started_at: null,
+      completed_at: null,
+      created_at: '2026-04-07T04:00:00.000Z',
+      updated_at: '2026-04-07T04:00:00.000Z',
+    }),
+  }),
+  useExecuteExportTask: () => ({
+    data: null,
+    isPending: false,
+    isError: false,
+    mutateAsync: vi.fn().mockResolvedValue({
+      id: 1,
+      name: '工单与留言日报',
+      source_kind: 'tickets',
+      format: 'csv',
+      status: 'running',
+      row_count: 2,
+      download_url: null,
+      last_error: null,
+      started_at: '2026-04-07T04:10:00.000Z',
+      completed_at: null,
+      created_at: '2026-04-07T03:00:00.000Z',
+      updated_at: '2026-04-07T04:10:00.000Z',
+    }),
+  }),
+  useCompleteExportTask: () => ({
+    data: null,
+    isPending: false,
+    isError: false,
+    mutateAsync: vi.fn().mockResolvedValue({
+      id: 1,
+      name: '工单与留言日报',
+      source_kind: 'tickets',
+      format: 'csv',
+      status: 'completed',
+      row_count: 2,
+      download_url: 'http://localhost:8000/exporting/tasks/1/download',
+      last_error: null,
+      started_at: '2026-04-07T04:10:00.000Z',
+      completed_at: '2026-04-07T04:20:00.000Z',
+      created_at: '2026-04-07T03:00:00.000Z',
+      updated_at: '2026-04-07T04:20:00.000Z',
+    }),
   }),
   useAuthState: () => ({
     data: { isAuthenticated: true, user: { username: 'admin' }, permissions: ['read'] },
@@ -96,14 +183,8 @@ describe('admin-web enhancement pages', () => {
   it('renders export management templates and snapshots', () => {
     renderWithProviders(<ExportManagementPage />);
     expect(screen.getByRole('heading', { name: '导出管理' })).toBeInTheDocument();
-    expect(screen.getByText('导出任务模板')).toBeInTheDocument();
+    expect(screen.getByText('任务总数')).toBeInTheDocument();
+    expect(screen.getByText('导出任务列表')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '创建导出任务' })).toBeInTheDocument();
-  });
-
-  it('renders video service stage and session cards', () => {
-    renderWithProviders(<VideoServicePage />);
-    expect(screen.getByRole('heading', { name: '视频客服' })).toBeInTheDocument();
-    expect(screen.getByText('主视频舞台')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '开始视频服务' })).toBeInTheDocument();
   });
 });

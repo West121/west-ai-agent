@@ -11,6 +11,7 @@ from app.core.db import Base
 from app.modules.conversation.models import Conversation, ConversationEvent
 from app.modules.conversation.router import router as conversation_router
 from app.modules.customer.models import CustomerProfile
+from app.testing.auth_utils import override_authenticated_user, seed_authenticated_user
 
 
 @pytest.fixture()
@@ -42,6 +43,8 @@ def client(db_session: Session) -> TestClient:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    user = seed_authenticated_user(db_session, permissions=["conversation.read", "conversation.write"])
+    override_authenticated_user(app, user)
     return TestClient(app)
 
 

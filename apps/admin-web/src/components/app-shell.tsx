@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import type { PropsWithChildren } from 'react';
+import { useEffect, type PropsWithChildren } from 'react';
 
 import { useAuthState } from '@/hooks/use-platform-api';
-import { clearStoredAccessToken, platformApiBaseUrl } from '@/lib/platform-api';
+import { clearStoredAccessToken, getStoredAccessToken, platformApiBaseUrl } from '@/lib/platform-api';
 
 const navItems = [
   { to: '/', label: '总览' },
@@ -27,6 +27,33 @@ const navItems = [
 
 export function AppShell({ children }: PropsWithChildren) {
   const authState = useAuthState();
+  const token = getStoredAccessToken();
+  const pathname = globalThis.location?.pathname ?? '/';
+  const isAuthRoute = pathname === '/auth';
+  const isAuthenticated = authState.data?.isAuthenticated ?? false;
+
+  useEffect(() => {
+    if (isAuthRoute) {
+      return;
+    }
+    if (!token || (!authState.isPending && !isAuthenticated)) {
+      window.location.assign('/auth');
+    }
+  }, [authState.isPending, isAuthRoute, isAuthenticated, token]);
+
+  if (!isAuthRoute && (!token || authState.isPending || !isAuthenticated)) {
+    return (
+      <div className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900">
+        <div className="mx-auto max-w-xl rounded-[1.5rem] border border-slate-200 bg-white p-8 shadow-[0_10px_36px_rgba(15,23,42,0.06)]">
+          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-sky-700">Auth Guard</p>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">正在跳转到登录页</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            当前页面属于后台管理域，需要先完成平台登录与权限校验。
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen text-slate-900">

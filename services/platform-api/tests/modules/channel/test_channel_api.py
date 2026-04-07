@@ -10,6 +10,7 @@ from app.core.db import Base
 from app.modules.channel.dependencies import get_db
 from app.modules.channel.models import ChannelApp
 from app.modules.channel.router import router as channel_router
+from app.testing.auth_utils import override_authenticated_user, seed_authenticated_user
 
 
 def build_test_app(db_session: Session) -> FastAPI:
@@ -20,6 +21,8 @@ def build_test_app(db_session: Session) -> FastAPI:
         yield db_session
 
     application.dependency_overrides[get_db] = override_get_db
+    user = seed_authenticated_user(db_session, permissions=["channel.read", "channel.write"])
+    override_authenticated_user(application, user)
     return application
 
 

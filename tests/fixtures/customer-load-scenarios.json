@@ -1,0 +1,179 @@
+{
+  "name": "customer-service-load",
+  "description": "中文客服长会话与并发压测",
+  "concurrency": 3,
+  "bootstrapKnowledge": true,
+  "useAi": true,
+  "documents": [
+    {
+      "tenant_id": "customer-load-20260407",
+      "type": "faq",
+      "title": "退款到账说明",
+      "category": "售后",
+      "tags": ["退款", "账期"],
+      "language": "zh-CN",
+      "channels": ["web", "h5", "app"],
+      "content": "Q: 退款多久到账？\nA: 一般情况下原路退款会在 1 到 3 个工作日到账。"
+    },
+    {
+      "tenant_id": "customer-load-20260407",
+      "type": "faq",
+      "title": "发票补开说明",
+      "category": "财务",
+      "tags": ["发票", "开票"],
+      "language": "zh-CN",
+      "channels": ["web", "h5"],
+      "content": "Q: 发票怎么补开？\nA: 请提供订单号、抬头信息和邮箱，系统会在 2 个工作日内处理。"
+    },
+    {
+      "tenant_id": "customer-load-20260407",
+      "type": "faq",
+      "title": "物流查询说明",
+      "category": "物流",
+      "tags": ["物流", "运单"],
+      "language": "zh-CN",
+      "channels": ["web", "app"],
+      "content": "Q: 物流怎么查询？\nA: 你可以通过订单页查看运单号，输入运单号即可追踪物流状态。"
+    },
+    {
+      "tenant_id": "customer-load-20260407",
+      "type": "faq",
+      "title": "账号冻结处理",
+      "category": "账号",
+      "tags": ["账号", "冻结"],
+      "language": "zh-CN",
+      "channels": ["web", "h5", "app"],
+      "content": "Q: 账号被冻结怎么办？\nA: 请先确认是否存在异常登录，再联系客服提交申诉单，通常 1 个工作日内回复。"
+    },
+    {
+      "tenant_id": "customer-load-20260407",
+      "type": "faq",
+      "title": "退货规则说明",
+      "category": "售后",
+      "tags": ["退货", "规则"],
+      "language": "zh-CN",
+      "channels": ["web", "h5"],
+      "content": "Q: 退货规则是什么？\nA: 未拆封商品支持 7 天无理由退货，特殊商品除外。"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "refund-session",
+      "customer": {
+        "name": "退款访客"
+      },
+      "turns": [
+        {
+          "query": "退款多久到账？",
+          "expect": {
+            "decision": "answer",
+            "answerContains": ["1 到 3 个工作日"],
+            "nextAction": "answer"
+          }
+        },
+        {
+          "query": "我要退款，什么时候到账？",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        },
+        {
+          "query": "原路退款一般多久到账",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        }
+      ]
+    },
+    {
+      "id": "invoice-session",
+      "customer": {
+        "name": "开票访客"
+      },
+      "turns": [
+        {
+          "query": "发票怎么补开？",
+          "expect": {
+            "decision": "answer",
+            "answerContains": ["订单号", "抬头信息", "邮箱"],
+            "nextAction": "answer"
+          }
+        },
+        {
+          "query": "发票怎么补开？",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        },
+        {
+          "query": "我要补开发票，订单号 TK2026040601",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        }
+      ]
+    },
+    {
+      "id": "logistics-session",
+      "customer": {
+        "name": "物流访客"
+      },
+      "turns": [
+        {
+          "query": "物流怎么查询？",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        },
+        {
+          "query": "请帮我查一下运单号怎么找",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        },
+        {
+          "query": "物流状态一直没更新怎么办",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        }
+      ]
+    },
+    {
+      "id": "account-session",
+      "customer": {
+        "name": "账号访客"
+      },
+      "turns": [
+        {
+          "query": "账号被冻结怎么办",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        },
+        {
+          "query": "请问怎么提交申诉单",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        },
+        {
+          "query": "异常登录怎么确认",
+          "expect": {
+            "decision": "answer",
+            "nextAction": "answer"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -60,8 +60,7 @@ export function getStackConfig() {
 function serviceDefinitions(config) {
   const openAiLikeApiKey =
     process.env.AI_SERVICE_OPENAI_LIKE_API_KEY ?? process.env.QWEN_API_KEY ?? process.env.OPENAI_API_KEY ?? '';
-  const defaultProvider =
-    process.env.AI_SERVICE_DEFAULT_PROVIDER ?? (openAiLikeApiKey ? 'openai_like' : 'ollama');
+  const defaultProvider = process.env.AI_SERVICE_DEFAULT_PROVIDER ?? 'openai_like';
   const openAiLikeBaseUrl =
     process.env.AI_SERVICE_OPENAI_LIKE_BASE_URL ??
     (process.env.QWEN_API_KEY ? 'https://dashscope.aliyuncs.com/compatible-mode/v1' : '');
@@ -78,6 +77,10 @@ function serviceDefinitions(config) {
       args: ['run', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(config.platformApiPort)],
       env: {
         APP_DATABASE_URL: postgresUrl,
+        WORKER_JOBS_SEARCH_INDEX_PROVIDER: 'opensearch',
+        WORKER_JOBS_OPENSEARCH_URL: opensearchUrl,
+        WORKER_JOBS_OPENSEARCH_INDEX: opensearchIndex,
+        WORKER_JOBS_OBJECT_STORAGE_PROVIDER: 'noop',
       },
       readyUrl: `${config.urls.platformApi}/healthz`,
     },
@@ -160,6 +163,53 @@ function isPidAlive(pid) {
     return true;
   } catch {
     return false;
+  }
+}
+
+function findListeningPids(port, host = '127.0.0.1') {
+  try {
+    const output = execFileSync('lsof', ['-tiTCP:' + String(port), '-sTCP:LISTEN', '-nP'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => Number(line))
+      .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
+  } catch {
+    return [];
+  }
+}
+
+function managedPorts(config) {
+  return [
+    config.platformApiPort,
+    config.messageGatewayPort,
+    config.aiServicePort,
+    config.adminWebPort,
+    config.customerH5Port,
+  ];
+}
+
+async function freeManagedPorts(config) {
+  for (const port of managedPorts(config)) {
+    for (const pid of findListeningPids(port)) {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch {}
+    }
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  for (const port of managedPorts(config)) {
+    for (const pid of findListeningPids(port)) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {}
+    }
   }
 }
 
@@ -294,6 +344,8 @@ export async function stopE2EStack(options = {}) {
       env: composeEnv(config),
     });
   }
+
+  await freeManagedPorts(config);
 
   if (await fileExists(metaFile)) {
     await fs.unlink(metaFile);

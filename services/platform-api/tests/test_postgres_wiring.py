@@ -23,6 +23,7 @@ def test_platform_api_boots_and_seeds_against_postgres(monkeypatch) -> None:
         "app.modules.customer.models",
         "app.modules.knowledge.models",
         "app.modules.service.models",
+        "app.modules.video.models",
     ]
     main_module = importlib.import_module("app.main")
 

@@ -218,6 +218,8 @@ class WorkerSinkSettings:
 
     @classmethod
     def from_env(cls) -> "WorkerSinkSettings":
+        defaults = cls()
+
         def read_bool(name: str, default: bool) -> bool:
             value = getenv(name)
             if value is None:
@@ -241,14 +243,14 @@ class WorkerSinkSettings:
         return cls(
             object_storage_provider=object_storage_provider,
             search_index_provider=search_index_provider,
-            minio_endpoint=read_optional("WORKER_JOBS_MINIO_ENDPOINT") or cls.minio_endpoint,
-            minio_access_key=read_optional("WORKER_JOBS_MINIO_ACCESS_KEY") or cls.minio_access_key,
-            minio_secret_key=read_optional("WORKER_JOBS_MINIO_SECRET_KEY") or cls.minio_secret_key,
-            minio_bucket=read_optional("WORKER_JOBS_MINIO_BUCKET") or cls.minio_bucket,
-            minio_secure=read_bool("WORKER_JOBS_MINIO_SECURE", cls.minio_secure),
-            minio_object_prefix=read_optional("WORKER_JOBS_MINIO_OBJECT_PREFIX") or cls.minio_object_prefix,
-            opensearch_url=read_optional("WORKER_JOBS_OPENSEARCH_URL") or cls.opensearch_url,
-            opensearch_index=read_optional("WORKER_JOBS_OPENSEARCH_INDEX") or cls.opensearch_index,
+            minio_endpoint=read_optional("WORKER_JOBS_MINIO_ENDPOINT") or defaults.minio_endpoint,
+            minio_access_key=read_optional("WORKER_JOBS_MINIO_ACCESS_KEY") or defaults.minio_access_key,
+            minio_secret_key=read_optional("WORKER_JOBS_MINIO_SECRET_KEY") or defaults.minio_secret_key,
+            minio_bucket=read_optional("WORKER_JOBS_MINIO_BUCKET") or defaults.minio_bucket,
+            minio_secure=read_bool("WORKER_JOBS_MINIO_SECURE", defaults.minio_secure),
+            minio_object_prefix=read_optional("WORKER_JOBS_MINIO_OBJECT_PREFIX") or defaults.minio_object_prefix,
+            opensearch_url=read_optional("WORKER_JOBS_OPENSEARCH_URL") or defaults.opensearch_url,
+            opensearch_index=read_optional("WORKER_JOBS_OPENSEARCH_INDEX") or defaults.opensearch_index,
             opensearch_username=read_optional("WORKER_JOBS_OPENSEARCH_USERNAME"),
             opensearch_password=read_optional("WORKER_JOBS_OPENSEARCH_PASSWORD"),
         )

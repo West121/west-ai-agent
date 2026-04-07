@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.db import Base
 from app.modules.customer.models import CustomerProfile
 from app.modules.service.router import router as service_router
+from app.testing.auth_utils import override_authenticated_user, seed_authenticated_user
 
 
 def _db_path() -> Path:
@@ -26,6 +27,8 @@ def _build_app(db_session: Session) -> FastAPI:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    user = seed_authenticated_user(db_session, permissions=["service.read", "service.write"])
+    override_authenticated_user(app, user)
     return app
 
 

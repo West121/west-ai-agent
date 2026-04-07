@@ -96,3 +96,45 @@ def test_retrieval_falls_back_when_opensearch_request_fails() -> None:
 
     assert summary.matched_count >= 1
     assert summary.matched_documents[0].document.id == "provider-selection"
+
+
+def test_retrieval_ignores_irrelevant_opensearch_hits_without_overlap() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "hits": {
+                    "total": {"value": 1},
+                    "hits": [
+                        {
+                            "_id": "doc-runtime-2-faq-1",
+                            "_score": 12.0,
+                            "_source": {
+                                "document_id": "doc-runtime-2",
+                                "title": "发票补开说明",
+                                "content": "请提供订单号、发票抬头、税号和收件邮箱。",
+                                "metadata": {"question": "补开发票需要什么材料？"},
+                                "tags": ["发票", "财务"],
+                            },
+                        }
+                    ],
+                }
+            },
+        )
+
+    settings = Settings(
+        opensearch_url="http://127.0.0.1:9200",
+        opensearch_index="knowledge",
+    )
+    service = RetrievalService(settings=settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    summary = service.retrieve(
+        RewriteResult(
+            original_query="你们总部停车场收费标准是什么？",
+            normalized_query="你们总部停车场收费标准是什么？",
+            tokens=("总部", "停车场", "收费标准"),
+        )
+    )
+
+    assert summary.matched_count == 0
+    assert summary.matched_documents == ()

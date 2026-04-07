@@ -211,7 +211,7 @@ async function aiRequestJson<T>(path: string, init: RequestInit): Promise<T> {
 export async function createCustomerProfile(
   input: CustomerProfileCreateInput,
 ): Promise<CustomerProfileRead> {
-  return requestJson<CustomerProfileRead>('/customer/profiles', {
+  return requestJson<CustomerProfileRead>('/public/customer/profiles', {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -220,14 +220,14 @@ export async function createCustomerProfile(
 export async function createConversation(
   input: ConversationCreateInput,
 ): Promise<ConversationRead> {
-  return requestJson<ConversationRead>('/conversation/conversations', {
+  return requestJson<ConversationRead>('/public/conversation/conversations', {
     method: 'POST',
     body: JSON.stringify(input),
   });
 }
 
 export async function submitLeaveMessage(input: LeaveMessageInput): Promise<unknown> {
-  return requestOptionalJson<unknown>('/service/leave-messages', {
+  return requestOptionalJson<unknown>('/public/service/leave-messages', {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -237,7 +237,7 @@ export async function submitConversationSatisfaction(
   conversationId: number | string,
   input: ConversationSatisfactionInput,
 ): Promise<unknown> {
-  return requestOptionalJson<unknown>(`/conversation/conversations/${conversationId}/satisfaction`, {
+  return requestOptionalJson<unknown>(`/public/conversation/conversations/${conversationId}/satisfaction`, {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -247,7 +247,7 @@ export async function getConversationSummary(
   conversationId: number | string,
 ): Promise<ConversationSummaryRead | undefined> {
   return requestOptionalJson<ConversationSummaryRead>(
-    `/conversation/conversations/${conversationId}/summary`,
+    `/public/conversation/conversations/${conversationId}/summary`,
     {
       method: 'GET',
     },

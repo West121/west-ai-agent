@@ -72,10 +72,25 @@
 - Android debug APK: [app-debug.apk](/Users/west/dev/code/west/west-ai-agent/apps/mobile-flutter/build/app/outputs/flutter-apk/app-debug.apk)
 - iOS simulator app: [Runner.app](/Users/west/dev/code/west/west-ai-agent/apps/mobile-flutter/build/ios/iphonesimulator/Runner.app)
 
+## Deployment Readiness
+
+当前仓库已经补齐了可交付所需的关键文档口径：
+
+- `README.md` 描述了本地开发、验证命令、环境分层和首次初始化
+- `infra/docker/README.md` 说明了基础设施编排和业务服务边界
+- `2026-04-07-production-runbook.md` 描述了正式部署、镜像构建、备份恢复和限制项
+
+生产私有化交付时，仍需要外部输入或外部流水线补齐：
+
+- 业务服务镜像发布流水线
+- Android release keystore
+- 生产环境密钥和证书
+
 ## Remaining External Inputs
 
 以下项不是代码阻塞，但需要外部输入才能进入最终生产发布：
 
+- 业务服务镜像仓库 / CI 发布链路
 - Android release keystore
 - 生产环境密钥
 - 正式域名 / 证书

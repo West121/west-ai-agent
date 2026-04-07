@@ -1,0 +1,110 @@
+services:
+  platform-api:
+    build:
+      context: ../..
+      dockerfile: services/platform-api/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_NAME: platform-api
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      APP_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-platform}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:?set APP_JWT_SECRET}
+      APP_JWT_ALGORITHM: ${APP_JWT_ALGORITHM:-HS256}
+      APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-["http://localhost:4173","http://localhost:4174"]}
+      APP_DEFAULT_ADMIN_USERNAME: ${APP_DEFAULT_ADMIN_USERNAME:-admin}
+      APP_DEFAULT_ADMIN_PASSWORD: ${APP_DEFAULT_ADMIN_PASSWORD:-admin123}
+      APP_BOOTSTRAP_DEFAULT_ADMIN: ${APP_BOOTSTRAP_DEFAULT_ADMIN:-false}
+      APP_BOOTSTRAP_SAMPLE_DATA: ${APP_BOOTSTRAP_SAMPLE_DATA:-false}
+      APP_REDIS_URL: redis://redis:6379/0
+      APP_OPENSEARCH_URL: http://opensearch:9200
+      APP_MINIO_ENDPOINT: minio:9000
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - opensearch
+    ports:
+      - "${PLATFORM_API_PORT:-8000}:8000"
+
+  message-gateway:
+    build:
+      context: ../..
+      dockerfile: services/message-gateway/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_NAME: message-gateway
+      APP_GATEWAY_HOST: 0.0.0.0
+      APP_GATEWAY_PORT: 8010
+      APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-["http://localhost:4173","http://localhost:4174"]}
+    depends_on:
+      - redis
+    ports:
+      - "${MESSAGE_GATEWAY_PORT:-8010}:8010"
+
+  ai-service:
+    build:
+      context: ../..
+      dockerfile: services/ai-service/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_NAME: ai-service
+      APP_AI_HOST: 0.0.0.0
+      APP_AI_PORT: 8020
+      APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-["http://localhost:4173","http://localhost:4174"]}
+      AI_SERVICE_DEFAULT_PROVIDER: ${AI_SERVICE_DEFAULT_PROVIDER:-openai_like}
+      AI_SERVICE_OPENAI_LIKE_BASE_URL: ${AI_SERVICE_OPENAI_LIKE_BASE_URL:?set AI_SERVICE_OPENAI_LIKE_BASE_URL}
+      AI_SERVICE_OPENAI_LIKE_API_KEY: ${AI_SERVICE_OPENAI_LIKE_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_SERVICE_OPENAI_LIKE_MODELS: ${AI_SERVICE_OPENAI_LIKE_MODELS:-qwen-plus,qwen-max,deepseek-v3}
+      AI_SERVICE_VLLM_BASE_URL: ${AI_SERVICE_VLLM_BASE_URL:-http://vllm:8100/v1}
+      AI_SERVICE_VLLM_MODELS: ${AI_SERVICE_VLLM_MODELS:-qwen2.5,llama-3.1}
+      AI_SERVICE_OLLAMA_BASE_URL: ${AI_SERVICE_OLLAMA_BASE_URL:-http://ollama:11434}
+      AI_SERVICE_OLLAMA_MODELS: ${AI_SERVICE_OLLAMA_MODELS:-qwen2.5,mistral}
+      AI_SERVICE_OPENSEARCH_URL: http://opensearch:9200
+      AI_SERVICE_OPENSEARCH_INDEX: ${AI_SERVICE_OPENSEARCH_INDEX:-knowledge_chunks}
+      AI_SERVICE_OPENSEARCH_USERNAME: ${AI_SERVICE_OPENSEARCH_USERNAME:-}
+      AI_SERVICE_OPENSEARCH_PASSWORD: ${AI_SERVICE_OPENSEARCH_PASSWORD:-}
+    depends_on:
+      - opensearch
+    ports:
+      - "${AI_SERVICE_PORT:-8020}:8020"
+
+  worker-jobs:
+    profiles: ["jobs"]
+    build:
+      context: ../..
+      dockerfile: services/worker-jobs/Dockerfile
+    environment:
+      APP_OPENSEARCH_URL: http://opensearch:9200
+      APP_MINIO_ENDPOINT: minio:9000
+      APP_MINIO_SECURE: "false"
+      APP_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      APP_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio123}
+      APP_MINIO_BUCKET: ${APP_MINIO_BUCKET:-knowledge-assets}
+    depends_on:
+      - opensearch
+      - minio
+
+  admin-web:
+    build:
+      context: ../..
+      dockerfile: apps/admin-web/Dockerfile
+    depends_on:
+      - platform-api
+      - message-gateway
+      - ai-service
+    ports:
+      - "${ADMIN_WEB_PORT:-4173}:80"
+
+  customer-h5:
+    build:
+      context: ../..
+      dockerfile: apps/customer-h5/Dockerfile
+    depends_on:
+      - platform-api
+      - message-gateway
+      - ai-service
+    ports:
+      - "${CUSTOMER_H5_PORT:-4174}:80"

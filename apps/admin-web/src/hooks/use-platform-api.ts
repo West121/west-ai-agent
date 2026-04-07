@@ -12,6 +12,8 @@ import {
   type ConversationEndInput,
   type ConversationTransferInput,
   type CustomerProfile,
+  type ExportTask,
+  type ExportTaskCreateInput,
   type KnowledgeDocument,
   type KnowledgeDocumentCreateInput,
   type KnowledgeIndexTaskResult,
@@ -25,10 +27,19 @@ import {
   type PublishKnowledgeVersionInput,
   type SatisfactionCreateInput,
   type SatisfactionRecord,
+  type VideoSession,
+  type VideoSessionEndInput,
+  type VideoSessionListResponse,
+  type VideoSessionStartInput,
+  type VideoSessionTransferTicketInput,
+  type VideoSnapshot,
+  type VideoSnapshotCreateInput,
+  type VideoSnapshotListResponse,
   type Ticket,
   type TicketCreateInput,
   type TicketListResponse,
   type TicketUpdateInput,
+  ApiError,
   clearStoredAccessToken,
   getStoredAccessToken,
   normalizeAuthUsers,
@@ -154,6 +165,86 @@ export function useConversations() {
   });
 }
 
+export function useVideoSessions() {
+  return useQuery({
+    queryKey: ['platform-api', 'video', 'sessions'],
+    queryFn: async (): Promise<VideoSession[]> => {
+      const payload = await requestJson<VideoSessionListResponse>('/video/sessions');
+      return payload.items ?? [];
+    },
+  });
+}
+
+export function useCurrentVideoSession() {
+  return useQuery({
+    queryKey: ['platform-api', 'video', 'current'],
+    queryFn: () => requestJson<VideoSession | null>('/video/sessions/current'),
+  });
+}
+
+export function useVideoSnapshots(sessionId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['platform-api', 'video', 'snapshots', sessionId],
+    enabled: typeof sessionId === 'number',
+    queryFn: async (): Promise<VideoSnapshot[]> => {
+      const payload = await requestJson<VideoSnapshotListResponse>(`/video/sessions/${sessionId}/snapshots`);
+      return payload.items ?? [];
+    },
+  });
+}
+
+export function useStartVideoSession() {
+  return useMutation({
+    mutationFn: (payload: VideoSessionStartInput) =>
+      requestJson<VideoSession>('/video/sessions/start', {
+        method: 'POST',
+        body: payload,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
+    },
+  });
+}
+
+export function useEndVideoSession() {
+  return useMutation({
+    mutationFn: (variables: { sessionId: number; payload: VideoSessionEndInput }) =>
+      requestJson<VideoSession>(`/video/sessions/${variables.sessionId}/end`, {
+        method: 'POST',
+        body: variables.payload,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
+    },
+  });
+}
+
+export function useCreateVideoSnapshot() {
+  return useMutation({
+    mutationFn: (variables: { sessionId: number; payload: VideoSnapshotCreateInput }) =>
+      requestJson<VideoSnapshot>(`/video/sessions/${variables.sessionId}/snapshots`, {
+        method: 'POST',
+        body: variables.payload,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
+    },
+  });
+}
+
+export function useTransferVideoSessionTicket() {
+  return useMutation({
+    mutationFn: (variables: { sessionId: number; payload: VideoSessionTransferTicketInput }) =>
+      requestJson<Ticket>(`/video/sessions/${variables.sessionId}/transfer-ticket`, {
+        method: 'POST',
+        body: variables.payload,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
+    },
+  });
+}
+
 export function useGenerateH5Link() {
   return useMutation({
     mutationFn: async (variables: { channelAppId: number; path: string }) =>
@@ -245,6 +336,58 @@ export function useConversationHistory() {
     queryFn: async (): Promise<ConversationHistoryItem[]> => {
       const payload = await requestJson<ConversationHistoryListResponse>('/conversation/conversations/history');
       return payload.items ?? [];
+    },
+  });
+}
+
+export function useExportTasks() {
+  return useQuery({
+    queryKey: ['platform-api', 'export-tasks'],
+    queryFn: () => requestJson<ExportTask[]>('/exporting/tasks'),
+  });
+}
+
+export function useExportTask(taskId: number | null) {
+  return useQuery({
+    queryKey: ['platform-api', 'export-task', taskId],
+    enabled: typeof taskId === 'number',
+    queryFn: () => requestJson<ExportTask>(`/exporting/tasks/${taskId}`),
+  });
+}
+
+export function useCreateExportTask() {
+  return useMutation({
+    mutationFn: (payload: ExportTaskCreateInput) =>
+      requestJson<ExportTask>('/exporting/tasks', {
+        method: 'POST',
+        body: payload,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
+    },
+  });
+}
+
+export function useExecuteExportTask() {
+  return useMutation({
+    mutationFn: (taskId: number) =>
+      requestJson<ExportTask>(`/exporting/tasks/${taskId}/execute`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
+    },
+  });
+}
+
+export function useCompleteExportTask() {
+  return useMutation({
+    mutationFn: (taskId: number) =>
+      requestJson<ExportTask>(`/exporting/tasks/${taskId}/complete`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
     },
   });
 }
@@ -465,13 +608,26 @@ export function useAuthState() {
     queryKey: ['platform-api', 'auth-state', token ?? 'anonymous'],
     enabled: Boolean(token),
     queryFn: async (): Promise<{ isAuthenticated: boolean; user: AuthUser | null; permissions: string[] }> => {
-      const current = await requestJson<CurrentPermissions>('/auth/me/permissions');
-      return {
-        isAuthenticated: true,
-        user: current.user,
-        permissions: current.permissions,
-      };
+      try {
+        const current = await requestJson<CurrentPermissions>('/auth/me/permissions');
+        return {
+          isAuthenticated: true,
+          user: current.user,
+          permissions: current.permissions,
+        };
+      } catch (error) {
+        if (error instanceof ApiError && [401, 403].includes(error.status)) {
+          clearStoredAccessToken();
+          return {
+            isAuthenticated: false,
+            user: null,
+            permissions: [],
+          };
+        }
+        throw error;
+      }
     },
+    retry: false,
     initialData: token
       ? undefined
       : {

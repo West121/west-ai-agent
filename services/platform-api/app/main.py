@@ -55,25 +55,57 @@ app.include_router(api_router)
 def seed_default_admin() -> None:
     session = SessionLocal()
     try:
-        existing = session.query(User).filter(User.username == settings.app_default_admin_username).one_or_none()
-        if existing is not None:
-            return
-
-        permissions = [
-            Permission(name="platform.read"),
-            Permission(name="customer.read"),
-            Permission(name="knowledge.read"),
-            Permission(name="channel.read"),
-            Permission(name="conversation.read"),
+        required_permission_names = [
+            "platform.read",
+            "customer.read",
+            "customer.write",
+            "knowledge.read",
+            "knowledge.write",
+            "channel.read",
+            "channel.write",
+            "conversation.read",
+            "conversation.write",
+            "service.read",
+            "service.write",
+            "video.read",
+            "video.write",
+            "export.read",
+            "export.write",
         ]
-        admin_role = Role(name="admin", permissions=permissions)
-        admin_user = User(
-            username=settings.app_default_admin_username,
-            password_hash=hash_password(settings.app_default_admin_password),
-            role=admin_role,
-            is_active=True,
-        )
-        session.add(admin_user)
+        existing_permissions = {
+            permission.name: permission for permission in session.query(Permission).all()
+        }
+        permissions = []
+        for name in required_permission_names:
+            permission = existing_permissions.get(name)
+            if permission is None:
+                permission = Permission(name=name)
+                session.add(permission)
+                existing_permissions[name] = permission
+            permissions.append(permission)
+
+        admin_role = session.query(Role).filter(Role.name == "admin").one_or_none()
+        if admin_role is None:
+            admin_role = Role(name="admin")
+            session.add(admin_role)
+
+        granted_names = {permission.name for permission in admin_role.permissions}
+        for permission in permissions:
+            if permission.name not in granted_names:
+                admin_role.permissions.append(permission)
+
+        existing = session.query(User).filter(User.username == settings.app_default_admin_username).one_or_none()
+        if existing is None:
+            admin_user = User(
+                username=settings.app_default_admin_username,
+                password_hash=hash_password(settings.app_default_admin_password),
+                role=admin_role,
+                is_active=True,
+            )
+            session.add(admin_user)
+        else:
+            existing.role = admin_role
+            existing.is_active = True
         session.commit()
     finally:
         session.close()
