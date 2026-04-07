@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from statistics import mean
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -88,6 +88,8 @@ def _bucket_date(value: datetime) -> str:
 @router.get("/analytics/overview", response_model=ConversationAnalyticsOverviewRead)
 def get_conversation_analytics_overview(
     window_days: int = 7,
+    channel: str | None = Query(default=None),
+    status: str | None = Query(default=None),
     _: object = Depends(require_permissions("conversation.read")),
     db: Session = Depends(get_db),
 ) -> ConversationAnalyticsOverviewRead:
@@ -99,6 +101,10 @@ def get_conversation_analytics_overview(
             .options(selectinload(Conversation.summary), selectinload(Conversation.satisfaction))
         ).all()
     )
+    if channel is not None:
+        conversations = [conversation for conversation in conversations if conversation.channel.lower() == channel.lower()]
+    if status is not None:
+        conversations = [conversation for conversation in conversations if conversation.status.lower() == status.lower()]
     conversation_ids = [conversation.id for conversation in conversations]
     summary_count = (
         db.scalar(select(func.count(ConversationSummary.id)).where(ConversationSummary.conversation_id.in_(conversation_ids)))
@@ -117,14 +123,13 @@ def get_conversation_analytics_overview(
             select(SatisfactionRecord).where(SatisfactionRecord.conversation_id.in_(conversation_ids))
         ).all()
     )
-    transferred_events = list(
-        db.scalars(
-            select(ConversationEvent).where(
-                ConversationEvent.event_type == "transferred",
-                ConversationEvent.created_at >= cutoff,
-            )
-        ).all()
+    transferred_query = select(ConversationEvent).where(
+        ConversationEvent.event_type == "transferred",
+        ConversationEvent.created_at >= cutoff,
     )
+    if conversation_ids:
+        transferred_query = transferred_query.where(ConversationEvent.conversation_id.in_(conversation_ids))
+    transferred_events = list(db.scalars(transferred_query).all())
 
     created_buckets: dict[str, list[Conversation]] = defaultdict(list)
     ended_buckets: dict[str, list[Conversation]] = defaultdict(list)

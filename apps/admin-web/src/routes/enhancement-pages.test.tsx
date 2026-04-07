@@ -1,6 +1,7 @@
 import type { AnchorHTMLAttributes } from 'react';
 
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { ExportManagementPage } from '@/routes/export-management';
 import { QualityReviewPage } from '@/routes/quality-review';
@@ -218,12 +219,22 @@ vi.mock('@/hooks/use-platform-api', () => ({
 }));
 
 describe('admin-web enhancement pages', () => {
-  it('renders report center metrics and quick actions', () => {
+  it('renders report center metrics, scope filters, and drilldown links', async () => {
+    const user = userEvent.setup();
     renderWithProviders(<ReportCenterPage />);
     expect(screen.getByRole('heading', { name: '报表中心' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '总览' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '知识' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: '查看知识工坊' }).length).toBeGreaterThan(0);
     expect(screen.getAllByText('客户总量').length).toBeGreaterThan(0);
+    expect(screen.getByText('近 7 天会话趋势')).toBeInTheDocument();
     expect(screen.getByText('近 7 天工单趋势')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '查看会话分析' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: '查看会话分析' }).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: '知识' }));
+    expect(screen.getByText('知识文档状态')).toBeInTheDocument();
+    expect(screen.queryByText('近 7 天工单趋势')).not.toBeInTheDocument();
+    expect(screen.queryByText('近 7 天会话趋势')).not.toBeInTheDocument();
   });
 
   it('renders quality review samples and actions', () => {

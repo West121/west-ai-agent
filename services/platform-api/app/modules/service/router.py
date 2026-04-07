@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from statistics import mean
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -92,6 +92,11 @@ def _age_minutes(value: datetime, *, now: datetime) -> float:
 @router.get("/analytics/overview", response_model=ServiceAnalyticsOverviewRead)
 def get_service_analytics_overview(
     window_days: int = 7,
+    ticket_status: str | None = Query(default=None),
+    ticket_priority: str | None = Query(default=None),
+    ticket_source: str | None = Query(default=None),
+    leave_message_status: str | None = Query(default=None),
+    leave_message_source: str | None = Query(default=None),
     _: object = Depends(require_permissions("service.read")),
     db: Session = Depends(get_db),
 ) -> ServiceAnalyticsOverviewRead:
@@ -107,6 +112,20 @@ def get_service_analytics_overview(
             select(LeaveMessage).where(or_(LeaveMessage.created_at >= cutoff, LeaveMessage.updated_at >= cutoff))
         ).all()
     )
+    if ticket_status is not None:
+        tickets = [ticket for ticket in tickets if ticket.status.lower() == ticket_status.lower()]
+    if ticket_priority is not None:
+        tickets = [ticket for ticket in tickets if ticket.priority.lower() == ticket_priority.lower()]
+    if ticket_source is not None:
+        tickets = [ticket for ticket in tickets if ticket.source.lower() == ticket_source.lower()]
+    if leave_message_status is not None:
+        leave_messages = [
+            leave_message for leave_message in leave_messages if leave_message.status.lower() == leave_message_status.lower()
+        ]
+    if leave_message_source is not None:
+        leave_messages = [
+            leave_message for leave_message in leave_messages if leave_message.source.lower() == leave_message_source.lower()
+        ]
 
     ticket_buckets: dict[str, list[Ticket]] = defaultdict(list)
     leave_buckets: dict[str, list[LeaveMessage]] = defaultdict(list)

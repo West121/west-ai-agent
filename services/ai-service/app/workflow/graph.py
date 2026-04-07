@@ -1,12 +1,30 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import Final, Literal
 
 from app.workflow.types import SupportWorkflowRequest, WorkflowAction
 
-ComplexFlowCategory = Literal["refund", "after_sale", "account_freeze"]
+ComplexFlowCategory = Literal[
+    "refund",
+    "after_sale",
+    "account_freeze",
+    "invoice",
+    "logistics",
+    "payment_issue",
+    "complaint",
+]
+
+COMPLEX_FLOW_CATEGORIES: tuple[ComplexFlowCategory, ...] = (
+    "refund",
+    "after_sale",
+    "account_freeze",
+    "invoice",
+    "logistics",
+    "payment_issue",
+    "complaint",
+)
 
 PHONE_PATTERN: Final = re.compile(r"(?<!\d)(1[3-9]\d{9})(?!\d)")
 ORDER_PATTERN: Final = re.compile(r"(?:订单号|订单|工单号|ticket(?:\s*id)?)\s*[:：# ]*\s*([A-Za-z0-9_-]{4,})", re.IGNORECASE)
@@ -31,10 +49,29 @@ def classify_flow_category(query: str) -> ComplexFlowCategory | None:
         ("refund", ("退款", "退钱", "退款到账", "原路退回")),
         ("after_sale", ("售后", "退换", "换货", "维修", "保修", "返修", "退货")),
         ("account_freeze", ("账号冻结", "冻结", "封号", "锁定", "停用", "账号被封", "账号异常")),
+        ("invoice", ("发票", "开票", "补票", "电子票")),
+        ("logistics", ("物流", "快递", "配送", "发货", "包裹", "签收")),
+        ("payment_issue", ("支付失败", "付款失败", "扣款", "不到账", "到账", "支付异常", "交易失败")),
+        ("complaint", ("投诉", "差评", "举报", "不满", "申诉")),
     )
     for category, keywords in category_rules:
         if any(keyword in normalized for keyword in keywords):
             return category
+    return None
+
+
+def extract_issue_summary(query: str) -> str | None:
+    normalized = query.strip()
+    summary_patterns = (
+        r"(?:问题是|情况是|诉求是|描述是|原因是|现象是)\s*([^。！？;\n]{2,80})",
+        r"(?:麻烦|请帮我|帮我)\s*([^。！？;\n]{2,80})",
+    )
+    for pattern in summary_patterns:
+        match = re.search(pattern, normalized)
+        if match:
+            candidate = match.group(1).strip()
+            if len(candidate) >= 4 and not re.search(r"(订单|手机号|电话|邮箱|ticket|invoice|发票)", candidate):
+                return candidate
     return None
 
 
@@ -50,6 +87,8 @@ def extract_slots(query: str, category: ComplexFlowCategory) -> dict[str, str]:
         slots["customer_name"] = name
 
     slots["issue_category"] = category
+    if issue_summary := extract_issue_summary(query):
+        slots["issue_summary"] = issue_summary
 
     normalized = normalize_query(query)
     if any(keyword in normalized for keyword in ("转人工", "人工", "客服", "真人")):
@@ -63,6 +102,10 @@ def required_slots(category: ComplexFlowCategory) -> list[str]:
         "refund": ["order_id", "contact_phone"],
         "after_sale": ["order_id", "contact_phone", "issue_summary"],
         "account_freeze": ["customer_name", "contact_phone"],
+        "invoice": ["order_id", "contact_email"],
+        "logistics": ["order_id", "contact_phone", "issue_summary"],
+        "payment_issue": ["order_id", "issue_summary"],
+        "complaint": ["contact_phone", "issue_summary"],
     }
     return mapping[category]
 
@@ -80,7 +123,15 @@ def build_slot_prompt(category: ComplexFlowCategory, missing_slots: list[str]) -
         return f"退款流程还差 {readable_missing}，补齐后即可转人工或继续处理。"
     if category == "after_sale":
         return f"售后流程还差 {readable_missing}，补齐后即可转人工或继续处理。"
-    return f"账号冻结流程还差 {readable_missing}，补齐后即可转人工或继续处理。"
+    if category == "account_freeze":
+        return f"账号冻结流程还差 {readable_missing}，补齐后即可转人工或继续处理。"
+    if category == "invoice":
+        return f"开票流程还差 {readable_missing}，补齐后即可转人工或继续处理。"
+    if category == "logistics":
+        return f"物流流程还差 {readable_missing}，补齐后即可转人工或继续处理。"
+    if category == "payment_issue":
+        return f"支付问题还差 {readable_missing}，补齐后即可转人工或继续处理。"
+    return f"投诉/申诉流程还差 {readable_missing}，补齐后即可转人工或继续处理。"
 
 
 def build_summary(category: ComplexFlowCategory, next_action: WorkflowAction, missing_slots: list[str]) -> str:
@@ -115,8 +166,12 @@ class ComplexWorkflowOutcome:
 
 
 class ComplexWorkflowGraph:
-    def run(self, request: SupportWorkflowRequest) -> ComplexWorkflowOutcome:
-        flow_category = classify_flow_category(request.query)
+    def run(
+        self,
+        request: SupportWorkflowRequest,
+        flow_category: ComplexFlowCategory | None = None,
+    ) -> ComplexWorkflowOutcome:
+        flow_category = flow_category or classify_flow_category(request.query)
         if flow_category is None:
             raise ValueError("complex workflow graph requires a refund, after-sale, or account-freeze query")
 

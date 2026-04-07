@@ -11,7 +11,7 @@ DEFAULT_APP_ENV = "development"
 DEFAULT_APP_HOST = "0.0.0.0"
 DEFAULT_APP_PORT = 8020
 DEFAULT_APP_CORS_ORIGINS = ("*",)
-DEFAULT_OPENAI_LIKE_MODELS = ("qwen-plus", "qwen-max", "deepseek-v3")
+DEFAULT_OPENAI_LIKE_MODELS = ("qwen3.6-plus", "qwen-max", "deepseek-v3")
 DEFAULT_VLLM_MODELS = ("mixtral", "llama-3.1", "qwen2.5")
 DEFAULT_OLLAMA_MODELS = ("llama3.2", "mistral", "qwen2.5")
 

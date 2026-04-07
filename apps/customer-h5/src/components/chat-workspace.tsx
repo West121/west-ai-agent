@@ -17,7 +17,7 @@ import {
   type CustomerProfileRead,
 } from '@/lib/customer-h5-api';
 import { formatMessageReadStatus, mergeChatMessages } from '@/lib/chat-message-utils';
-import { platformApiBaseUrl, messageGatewayWsUrl } from '@/lib/runtime-config';
+import { aiServiceBaseUrl, platformApiBaseUrl, messageGatewayWsUrl } from '@/lib/runtime-config';
 import { useMessageGateway } from '@/hooks/use-message-gateway';
 
 type ChatMode = 'standalone' | 'embedded';
@@ -52,7 +52,27 @@ function createDefaultVisitorDraft(): VisitorDraft {
 }
 
 function shouldUseComplexWorkflow(query: string) {
-  return /(退款|退钱|售后|退换|换货|维修|返修|账号冻结|封号|锁定|账号异常)/i.test(query);
+  return /(退款|退钱|售后|退换|换货|维修|返修|账号冻结|封号|锁定|账号异常|发票|开票|物流|快递|配送|发货|支付失败|付款失败|扣款|不到账|到账|支付异常|投诉|差评|举报|申诉)/i.test(query);
+}
+
+async function requestWorkflowTriage(
+  query: string,
+  contextSlots: Record<string, string>,
+): Promise<AiDecisionRead> {
+  const response = await fetch(`${aiServiceBaseUrl}/workflow/triage`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query, context_slots: contextSlots }),
+  });
+
+  if (!response.ok) {
+    const fallback = `${response.status} ${response.statusText}`.trim();
+    throw new Error(fallback || 'workflow triage failed');
+  }
+
+  return (await response.json()) as AiDecisionRead;
 }
 
 function formatTime(value: string) {
@@ -172,6 +192,7 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const satisfactionSectionRef = useRef<HTMLDivElement | null>(null);
   const ackedMessageIdsRef = useRef<Set<string>>(new Set());
+  const workflowContextSlotsRef = useRef<Record<string, string>>({});
   const [profileIdInput, setProfileIdInput] = useState('');
   const [visitorDraft, setVisitorDraft] = useState<VisitorDraft>(() => createDefaultVisitorDraft());
   const [creatingSession, setCreatingSession] = useState(false);
@@ -181,6 +202,7 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
   const [draftMessage, setDraftMessage] = useState('');
   const [aiAdvice, setAiAdvice] = useState<AiAdviceState>({ status: 'idle' });
   const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
+  const [workflowContextSlots, setWorkflowContextSlots] = useState<Record<string, string>>({});
   const [satisfactionConversationId, setSatisfactionConversationId] = useState('');
   const [satisfactionScore, setSatisfactionScore] = useState('5');
   const [satisfactionComment, setSatisfactionComment] = useState('');
@@ -237,6 +259,22 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
     ackedMessageIdsRef.current.clear();
   }, [conversation?.id]);
 
+  useEffect(() => {
+    workflowContextSlotsRef.current = workflowContextSlots;
+  }, [workflowContextSlots]);
+
+  function mergeWorkflowContextSlots(nextSlots: Record<string, string> | undefined) {
+    if (!nextSlots) {
+      return;
+    }
+
+    workflowContextSlotsRef.current = {
+      ...workflowContextSlotsRef.current,
+      ...nextSlots,
+    };
+    setWorkflowContextSlots(workflowContextSlotsRef.current);
+  }
+
   async function handleCreateSession() {
     setCreatingSession(true);
     setSessionError(null);
@@ -244,6 +282,8 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
     setConversation(null);
     setHandoffNotice(null);
     setAiAdvice({ status: 'idle' });
+    workflowContextSlotsRef.current = {};
+    setWorkflowContextSlots({});
 
     try {
       let profileId = Number(profileIdInput.trim());
@@ -297,10 +337,14 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
     setAiAdvice({ status: 'loading', query });
 
     try {
-      const decision = await requestAiDecision({
-        query,
-        endpoint: shouldUseComplexWorkflow(query) ? 'triage' : 'answer',
-      });
+      const currentWorkflowContext = workflowContextSlotsRef.current;
+      const useComplexWorkflow = shouldUseComplexWorkflow(query) || Boolean(currentWorkflowContext.issue_category);
+      const decision = useComplexWorkflow
+        ? await requestWorkflowTriage(query, currentWorkflowContext)
+        : await requestAiDecision({
+            query,
+            endpoint: 'answer',
+          });
 
       if (decision.decision === 'answer' && decision.answer) {
         await appendConversationMessage(conversation!.id, {
@@ -310,6 +354,9 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
         });
         setAiAdvice({ status: 'success', query, response: decision });
         setHandoffNotice(null);
+        if (decision.workflow_mode === 'langgraph') {
+          mergeWorkflowContextSlots((decision as AiDecisionRead & { merged_slots?: Record<string, string> }).merged_slots);
+        }
         return;
       }
 
@@ -321,12 +368,18 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
         });
         setAiAdvice({ status: 'success', query, response: decision });
         setHandoffNotice('AI 需要更多信息，已返回补充提问。');
+        if (decision.workflow_mode === 'langgraph') {
+          mergeWorkflowContextSlots((decision as AiDecisionRead & { merged_slots?: Record<string, string> }).merged_slots);
+        }
         return;
       }
 
       const message = buildHandoffMessage(decision);
       setAiAdvice({ status: 'handoff', query, response: decision, message });
       setHandoffNotice(message);
+      if (decision.workflow_mode === 'langgraph') {
+        mergeWorkflowContextSlots((decision as AiDecisionRead & { merged_slots?: Record<string, string> }).merged_slots);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI 决策请求失败';
       setAiAdvice({ status: 'error', query, message });
@@ -780,6 +833,7 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
                   <p className="mt-1 text-xs opacity-80">
                     决策：{aiAdvice.response.decision}
                     {aiAdvice.response.workflow_mode ? ` · 流程 ${aiAdvice.response.workflow_mode}` : ''}
+                    {aiAdvice.response.flow_category ? ` · 类别 ${aiAdvice.response.flow_category}` : ''}
                     · 置信度 {aiAdvice.response.confidence.toFixed(2)}
                   </p>
                 </>
@@ -790,6 +844,7 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
                   <p className="mt-1 text-xs opacity-80">
                     决策：{aiAdvice.response.decision}
                     {aiAdvice.response.workflow_mode ? ` · 流程 ${aiAdvice.response.workflow_mode}` : ''}
+                    {aiAdvice.response.flow_category ? ` · 类别 ${aiAdvice.response.flow_category}` : ''}
                     · 置信度 {aiAdvice.response.confidence.toFixed(2)}
                   </p>
                 </>
@@ -906,7 +961,7 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
 
             <div className="mt-3 flex items-center justify-between gap-3">
               <p className="text-xs leading-5 text-slate-500">
-                输入框已接入真实发送链路，发送后会调用 AI 决策并在当前会话中给出建议。
+                输入框已接入真实发送链路，复杂流程会沿 LangGraph 补槽，普通问题仍走 DecisionPipeline。
               </p>
               <button
                 className="inline-flex items-center justify-center rounded-2xl bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
@@ -924,6 +979,10 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
 }
 
 function buildHandoffMessage(decision: AiDecisionRead): string {
+  if (decision.decision === 'handoff' && decision.next_prompt?.trim()) {
+    return decision.next_prompt.trim();
+  }
+
   if (decision.clarification?.trim()) {
     return `${decision.clarification.trim()} 建议转人工继续处理当前问题。`;
   }

@@ -79,6 +79,10 @@ class VideoSnapshot(Base):
     mime_type: Mapped[str | None] = Column(String(128), nullable=True)
     duration_seconds: Mapped[int | None] = Column(Integer, nullable=True)
     playback_url: Mapped[str | None] = Column(String(1024), nullable=True)
+    retention_state: Mapped[str] = Column(String(32), nullable=False, default="retained", index=True)
+    retention_reason: Mapped[str | None] = Column(Text, nullable=True)
+    retained_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     recorded_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 

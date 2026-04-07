@@ -21,8 +21,10 @@ from app.modules.video.crud import (
     list_video_recordings,
     list_video_snapshots,
     start_video_session,
+    update_video_recording_retention,
     update_video_session_summary,
     transfer_video_session_ticket,
+    video_recordings_overview,
 )
 from app.modules.video.storage import get_video_object_storage
 from app.modules.video.schemas import (
@@ -35,6 +37,7 @@ from app.modules.video.schemas import (
     VideoRecordingCreate,
     VideoRecordingListResponse,
     VideoRecordingRead,
+    VideoRecordingRetentionUpdate,
     VideoSnapshotCreate,
     VideoSnapshotListResponse,
     VideoSnapshotRead,
@@ -122,11 +125,19 @@ def post_video_snapshot(
 @router.get("/sessions/{session_id}/recordings", response_model=VideoRecordingListResponse)
 def get_video_recordings(
     session_id: int,
+    retention_state: str = "retained",
+    keyword: str | None = None,
     db: Session = Depends(get_db),
     _: object = Depends(require_permissions("video.read")),
 ) -> VideoRecordingListResponse:
+    overview = video_recordings_overview(db, session_id)
     return VideoRecordingListResponse(
-        items=[VideoRecordingRead.model_validate(recording) for recording in list_video_recordings(db, session_id)]
+        items=[
+            VideoRecordingRead.model_validate(recording)
+            for recording in list_video_recordings(db, session_id, retention_state=retention_state, keyword=keyword)
+        ],
+        retention_state=retention_state,
+        **overview,
     )
 
 
@@ -138,6 +149,25 @@ def post_video_recording(
     _: object = Depends(require_permissions("video.write")),
 ) -> VideoRecordingRead:
     return VideoRecordingRead.model_validate(create_video_recording(db, session_id, payload))
+
+
+@router.get("/recordings/{recording_id}", response_model=VideoRecordingRead)
+def get_video_recording_detail(
+    recording_id: int,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_permissions("video.read")),
+) -> VideoRecordingRead:
+    return VideoRecordingRead.model_validate(get_video_recording(db, recording_id))
+
+
+@router.patch("/recordings/{recording_id}/retention", response_model=VideoRecordingRead)
+def patch_video_recording_retention(
+    recording_id: int,
+    payload: VideoRecordingRetentionUpdate,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_permissions("video.write")),
+) -> VideoRecordingRead:
+    return VideoRecordingRead.model_validate(update_video_recording_retention(db, recording_id, payload))
 
 
 @router.post("/sessions/{session_id}/recordings/upload", response_model=VideoRecordingRead, status_code=status.HTTP_201_CREATED)

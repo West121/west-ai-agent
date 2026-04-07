@@ -12,6 +12,7 @@ import {
   useTransferVideoSessionTicket,
   useUpsertVideoSessionSummary,
   useUploadVideoRecording,
+  useUpdateVideoRecordingRetention,
   useVideoRecordings,
   useVideoSessionSummary,
   useVideoSessions,
@@ -54,6 +55,7 @@ export function VideoServicePage() {
   const createSnapshotMutation = useCreateVideoSnapshot();
   const transferTicketMutation = useTransferVideoSessionTicket();
   const uploadRecordingMutation = useUploadVideoRecording();
+  const updateRecordingRetentionMutation = useUpdateVideoRecordingRetention();
   const updateSummaryMutation = useUpsertVideoSessionSummary();
 
   const conversations = conversationsQuery.data ?? [];
@@ -70,6 +72,8 @@ export function VideoServicePage() {
   const [ticketDraftSessionId, setTicketDraftSessionId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<string>('等待开始视频服务');
   const [selectedRecordingId, setSelectedRecordingId] = useState<number | null>(null);
+  const [recordingFilter, setRecordingFilter] = useState<'retained' | 'deleted' | 'all'>('retained');
+  const [recordingKeyword, setRecordingKeyword] = useState('');
   const [summaryDraft, setSummaryDraft] = useState({
     operator_summary: '',
     issue_category: '',
@@ -89,7 +93,7 @@ export function VideoServicePage() {
   const sessionPreview = sessionDraft ?? currentSessionData ?? null;
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? sessionPreview ?? sessions[0] ?? null;
   const snapshotsQuery = useVideoSnapshots(selectedSession?.id);
-  const recordingsQuery = useVideoRecordings(selectedSession?.id);
+  const recordingsQuery = useVideoRecordings(selectedSession?.id, recordingFilter, recordingKeyword);
   const summaryQuery = useVideoSessionSummary(selectedSession?.id);
   const snapshots = snapshotsQuery.data ?? [];
   const recordings = recordingsQuery.data ?? [];
@@ -143,15 +147,16 @@ export function VideoServicePage() {
     },
   });
 
-  const isLoading =
+  const hasSelectedSession = selectedSession?.id != null;
+  const coreLoading =
     conversationsQuery.isLoading ||
     customersQuery.isLoading ||
     ticketsQuery.isLoading ||
     sessionsQuery.isLoading ||
-    currentSessionQuery.isLoading ||
-    (selectedSession?.id != null && (snapshotsQuery.isLoading || recordingsQuery.isLoading || summaryQuery.isLoading));
+    currentSessionQuery.isLoading;
+  const detailLoading = hasSelectedSession && (snapshotsQuery.isLoading || recordingsQuery.isLoading || summaryQuery.isLoading);
 
-  if (isLoading) {
+  if (coreLoading) {
     return (
       <section className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_10px_36px_rgba(15,23,42,0.06)]">
         <div className="h-8 w-56 animate-pulse rounded-2xl bg-slate-100" />
@@ -159,28 +164,33 @@ export function VideoServicePage() {
     );
   }
 
-  const queryError = [
+  const coreQueryError = [
     conversationsQuery,
     customersQuery,
     ticketsQuery,
     sessionsQuery,
     currentSessionQuery,
+  ]
+    .map((item) => item.error)
+    .find((item) => item != null);
+
+  if (conversationsQuery.isError || customersQuery.isError || ticketsQuery.isError || sessionsQuery.isError || currentSessionQuery.isError) {
+    return (
+      <section className="rounded-[1.75rem] border border-rose-200 bg-rose-50 p-6 text-rose-900">
+        <p className="text-sm font-semibold uppercase tracking-[0.24em]">视频客服失败</p>
+        <h2 className="mt-3 text-2xl font-semibold tracking-tight">无法生成视频客服页面</h2>
+        <p className="mt-3 text-sm leading-6 text-rose-800">{describeError(coreQueryError)}</p>
+      </section>
+    );
+  }
+
+  const detailQueryError = [
     snapshotsQuery,
     recordingsQuery,
     summaryQuery,
   ]
     .map((item) => item.error)
     .find((item) => item != null);
-
-  if (conversationsQuery.isError || customersQuery.isError || ticketsQuery.isError || sessionsQuery.isError || currentSessionQuery.isError || snapshotsQuery.isError || recordingsQuery.isError || summaryQuery.isError) {
-    return (
-      <section className="rounded-[1.75rem] border border-rose-200 bg-rose-50 p-6 text-rose-900">
-        <p className="text-sm font-semibold uppercase tracking-[0.24em]">视频客服失败</p>
-        <h2 className="mt-3 text-2xl font-semibold tracking-tight">无法生成视频客服页面</h2>
-        <p className="mt-3 text-sm leading-6 text-rose-800">{describeError(queryError)}</p>
-      </section>
-    );
-  }
 
   async function handleStartSession() {
     if (!customer) {
@@ -288,6 +298,24 @@ export function VideoServicePage() {
     }
   }
 
+  async function handleToggleRecordingRetention(recordingId: number, currentState: 'retained' | 'deleted') {
+    try {
+      const nextState = currentState === 'deleted' ? 'retained' : 'deleted';
+      await updateRecordingRetentionMutation.mutateAsync({
+        recordingId,
+        payload: {
+          retention_state: nextState,
+          reason: nextState === 'deleted' ? '由坐席端标记删除' : undefined,
+        },
+      });
+      setRecordingFilter(nextState);
+      setSelectedRecordingId(recordingId);
+      setFeedback(nextState === 'deleted' ? '录制已标记为删除' : '录制已恢复为保留');
+    } catch (error) {
+      setFeedback(describeError(error));
+    }
+  }
+
   return (
     <section className="grid gap-6">
       <div className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_10px_36px_rgba(15,23,42,0.06)]">
@@ -317,6 +345,11 @@ export function VideoServicePage() {
         <div className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">{feedback}</div>
         {videoCall.error ? (
           <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{videoCall.error}</div>
+        ) : null}
+        {detailQueryError ? (
+          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            辅助数据加载失败，已降级显示当前视频会话。{describeError(detailQueryError)}
+          </div>
         ) : null}
       </div>
 
@@ -418,6 +451,9 @@ export function VideoServicePage() {
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">暂无会话，先点击开始视频服务。</div>
               )}
             </div>
+            {detailLoading ? (
+              <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">正在同步抓拍、录制和摘要详情…</div>
+            ) : null}
           </section>
         </aside>
       </div>
@@ -428,15 +464,42 @@ export function VideoServicePage() {
             <h3 className="text-base font-semibold text-slate-950">录制回放</h3>
             <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">recordings</span>
           </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            {[
+              { label: '保留中', value: 'retained' as const },
+              { label: '已删除', value: 'deleted' as const },
+              { label: '全部', value: 'all' as const },
+            ].map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setRecordingFilter(item.value)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  recordingFilter === item.value ? 'bg-sky-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+            <input
+              value={recordingKeyword}
+              onChange={(event) => setRecordingKeyword(event.target.value)}
+              placeholder="搜索录制、备注、文件名"
+              className="min-w-[16rem] flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-300"
+            />
+          </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
             <div className="space-y-3">
               {recordings.length > 0 ? recordings.map((recording) => (
                 <button key={recording.id} type="button" onClick={() => setSelectedRecordingId(recording.id)} className={`w-full rounded-2xl border px-4 py-3 text-left transition ${recording.id === selectedRecording?.id ? 'border-sky-200 bg-sky-50' : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'}`}>
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-medium text-slate-900">{recording.label}</p>
-                    <span className="text-xs text-slate-500">{recording.duration_seconds ?? 0}s</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${recording.retention_state === 'deleted' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                      {recording.retention_state === 'deleted' ? '已删除' : '保留中'}
+                    </span>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-600">{recording.note ?? '无备注'}</p>
+                  <p className="mt-2 text-xs text-slate-500">{recording.file_name ?? 'video.webm'} · {recording.duration_seconds ?? 0}s</p>
                 </button>
               )) : (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">暂无录制文件，先通过浏览器开始录制。</div>
@@ -446,10 +509,33 @@ export function VideoServicePage() {
               {selectedRecording ? (
                 <div>
                   <video controls playsInline src={playbackUrl(selectedRecording.playback_url)} className="aspect-video w-full rounded-2xl bg-slate-900 object-cover" />
-                  <div className="mt-3 text-sm leading-6 text-slate-700">
-                    <p className="font-medium text-slate-900">{selectedRecording.label}</p>
+                  <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-medium text-slate-900">{selectedRecording.label}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${selectedRecording.retention_state === 'deleted' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {selectedRecording.retention_state === 'deleted' ? '已删除' : '保留中'}
+                      </span>
+                    </div>
                     <p>{selectedRecording.note ?? '无备注'}</p>
-                    <p className="mt-1 text-xs text-slate-500">{selectedRecording.file_name ?? 'video.webm'} · {selectedRecording.duration_seconds ?? 0} 秒</p>
+                    <p className="text-xs text-slate-500">{selectedRecording.file_name ?? 'video.webm'} · {selectedRecording.duration_seconds ?? 0} 秒</p>
+                    <p className="text-xs text-slate-500">播放 URL：{selectedRecording.playback_url ?? '自动生成'}</p>
+                    <p className="text-xs text-slate-500">文件键：{selectedRecording.file_key ?? '未上传'}</p>
+                    <p className="text-xs text-slate-500">删除原因：{selectedRecording.retention_reason ?? '无'}</p>
+                    <p className="text-xs text-slate-500">删除时间：{selectedRecording.deleted_at ? formatDateTime(selectedRecording.deleted_at) : '无'}</p>
+                    <p className="text-xs text-slate-500">保留时间：{selectedRecording.retained_at ? formatDateTime(selectedRecording.retained_at) : '无'}</p>
+                    <div className="flex flex-wrap gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleRecordingRetention(selectedRecording.id, selectedRecording.retention_state)}
+                        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                          selectedRecording.retention_state === 'deleted'
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                            : 'bg-rose-600 text-white hover:bg-rose-500'
+                        }`}
+                      >
+                        {selectedRecording.retention_state === 'deleted' ? '保留回放' : '删除回放'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (

@@ -1,6 +1,7 @@
 import type { AnchorHTMLAttributes } from 'react';
 
 import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { AnalyticsPage } from '@/routes/analytics';
 import { HistoryPage } from '@/routes/history';
@@ -202,15 +203,24 @@ vi.mock('@/hooks/use-platform-api', () => ({
 
 describe('backend enhancement pages', () => {
   it('renders analytics summary and operational actions', async () => {
+    const user = userEvent.setup();
     renderWithProviders(<AnalyticsPage />);
 
     expect(await screen.findByText('会话分析')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '仅会话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '仅服务' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '查看会话历史' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: '查看工单列表' }).length).toBeGreaterThan(0);
     expect(screen.getByText('近 7 天会话趋势')).toBeInTheDocument();
     expect(screen.getByText('工单优先级分布')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '报表中心' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '质检评分' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '视频客服' })).toBeInTheDocument();
     expect(screen.getByText('运营摘要')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '仅会话' }));
+    expect(screen.getByText('会话状态分布')).toBeInTheDocument();
+    expect(screen.queryByText('工单优先级分布')).not.toBeInTheDocument();
   });
 
   it('renders history details and next-step panel', async () => {

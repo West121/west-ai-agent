@@ -48,7 +48,7 @@ test.describe('customer-h5 standalone flows', () => {
       page
         .locator('div')
         .filter({ hasText: 'AI 建议' })
-        .filter({ hasText: /建议转人工继续处理当前问题。|AI 需要更多信息/ })
+        .filter({ hasText: /建议转人工继续处理当前问题。|AI 需要更多信息|已准备好转人工/ })
         .first(),
     ).toBeVisible();
   });

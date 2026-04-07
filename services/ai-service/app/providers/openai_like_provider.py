@@ -9,7 +9,7 @@ from app.providers.base import BaseProvider, ProviderInfo
 
 
 class OpenAILikeProvider(BaseProvider):
-    info = ProviderInfo(name="openai_like", models=("qwen-plus", "qwen-max", "deepseek-v3"))
+    info = ProviderInfo(name="openai_like", models=("qwen3.6-plus", "qwen-max", "deepseek-v3"))
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self._client = client
@@ -62,7 +62,7 @@ class OpenAILikeProvider(BaseProvider):
         if self._client is not None:
             return self._client
         base_url = settings.openai_like_base_url.rstrip("/")
-        return httpx.Client(base_url=base_url, timeout=30.0)
+        return httpx.Client(base_url=base_url, timeout=60.0)
 
     def _normalize_model_name(self, model: str) -> str:
         if model.startswith(f"{self.name}:"):

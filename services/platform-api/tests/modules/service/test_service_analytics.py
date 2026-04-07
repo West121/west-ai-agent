@@ -163,6 +163,23 @@ def test_service_analytics_overview_aggregates_trends_distributions_durations_an
         assert payload["hit_rate"]["ticket_assignment_rate"] == 50.0
         assert payload["hit_rate"]["sla_compliance_rate"] == 50.0
         assert payload["hit_rate"]["leave_assignment_rate"] == 50.0
+
+        filtered_response = client.get(
+            "/service/analytics/overview",
+            params={"window_days": 7, "ticket_status": "open", "leave_message_status": "pending"},
+        )
+        assert filtered_response.status_code == 200
+        filtered_payload = filtered_response.json()
+        filtered_trend = filtered_payload["trend"]
+        assert len(filtered_trend) == 1
+        assert filtered_trend[0]["ticket_count"] == 1
+        assert filtered_trend[0]["leave_message_count"] == 1
+        filtered_ticket_status = {item["label"]: item["value"] for item in filtered_payload["distribution"]["ticket_status"]}
+        filtered_leave_status = {item["label"]: item["value"] for item in filtered_payload["distribution"]["leave_message_status"]}
+        assert filtered_ticket_status["open"] == 1
+        assert filtered_leave_status["pending"] == 1
+        assert filtered_payload["duration"]["ticket_count"] == 1
+        assert filtered_payload["duration"]["leave_message_count"] == 1
     finally:
         session.close()
         Base.metadata.drop_all(bind=engine)

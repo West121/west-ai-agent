@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -62,11 +63,23 @@ class VideoRecordingCreate(BaseModel):
 
 
 class VideoRecordingRead(VideoSnapshotRead):
-    pass
+    retention_state: Literal["retained", "deleted"]
+    retention_reason: str | None
+    retained_at: datetime | None
+    deleted_at: datetime | None
 
 
 class VideoRecordingListResponse(BaseModel):
     items: list[VideoRecordingRead]
+    total_count: int
+    retained_count: int
+    deleted_count: int
+    retention_state: str
+
+
+class VideoRecordingRetentionUpdate(BaseModel):
+    retention_state: Literal["retained", "deleted"]
+    reason: str | None = Field(default=None, max_length=1024)
 
 
 class VideoSessionRead(BaseModel):

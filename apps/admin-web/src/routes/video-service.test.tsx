@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   disconnect: vi.fn(),
   startRecording: vi.fn(),
   stopRecording: vi.fn(),
+  updateRetention: vi.fn(),
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -91,8 +92,11 @@ vi.mock('@/hooks/use-platform-api', () => ({
     isLoading: false,
     isError: false,
   }),
-  useVideoRecordings: () => ({
-    data: [{ id: 51, session_id: 31, entry_type: 'recording', label: '浏览器录制 10:00', note: '用于回放', file_key: 'recordings/31.webm', file_name: '31.webm', mime_type: 'video/webm', duration_seconds: 12, playback_url: '/video/recordings/51/playback', recorded_at: '2026-04-07T05:50:00.000Z', created_at: '2026-04-07T05:50:00.000Z' }],
+  useVideoRecordings: (_sessionId?: number | null, retentionState?: 'retained' | 'deleted' | 'all') => ({
+    data:
+      retentionState === 'deleted'
+        ? [{ id: 52, session_id: 31, entry_type: 'recording', label: '已删除录制 10:05', note: '待合规复核', file_key: 'recordings/32.webm', file_name: '32.webm', mime_type: 'video/webm', duration_seconds: 9, playback_url: '/video/recordings/52/playback', recorded_at: '2026-04-07T05:55:00.000Z', created_at: '2026-04-07T05:55:00.000Z', retention_state: 'deleted', retention_reason: '由坐席端标记删除', retained_at: '2026-04-07T05:56:00.000Z', deleted_at: '2026-04-07T05:56:00.000Z' }]
+        : [{ id: 51, session_id: 31, entry_type: 'recording', label: '浏览器录制 10:00', note: '用于回放', file_key: 'recordings/31.webm', file_name: '31.webm', mime_type: 'video/webm', duration_seconds: 12, playback_url: '/video/recordings/51/playback', recorded_at: '2026-04-07T05:50:00.000Z', created_at: '2026-04-07T05:50:00.000Z', retention_state: 'retained', retention_reason: null, retained_at: '2026-04-07T05:50:00.000Z', deleted_at: null }],
     isLoading: false,
     isError: false,
   }),
@@ -131,6 +135,7 @@ vi.mock('@/hooks/use-platform-api', () => ({
   useTransferVideoSessionTicket: () => ({ mutateAsync: mocks.transferTicket, isPending: false }),
   useUploadVideoRecording: () => ({ mutateAsync: mocks.uploadRecording, isPending: false }),
   useUpsertVideoSessionSummary: () => ({ mutateAsync: mocks.saveSummary, isPending: false }),
+  useUpdateVideoRecordingRetention: () => ({ mutateAsync: mocks.updateRetention, isPending: false }),
 }));
 
 describe('VideoServicePage', () => {
@@ -166,5 +171,25 @@ describe('VideoServicePage', () => {
 
     await user.click(screen.getByRole('button', { name: '保存会后摘要' }));
     expect(mocks.saveSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports playback governance filters and delete-retain actions', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<VideoServicePage />);
+
+    expect(await screen.findByRole('heading', { name: '视频客服' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '删除回放' }));
+    expect(mocks.updateRetention).toHaveBeenCalledWith({
+      recordingId: 51,
+      payload: { retention_state: 'deleted', reason: '由坐席端标记删除' },
+    });
+
+    const deletedRecordings = await screen.findAllByText('已删除录制 10:05');
+    expect(deletedRecordings.length).toBeGreaterThanOrEqual(1);
+    await user.click(screen.getByRole('button', { name: '保留回放' }));
+    expect(mocks.updateRetention).toHaveBeenCalledWith({
+      recordingId: 52,
+      payload: { retention_state: 'retained', reason: undefined },
+    });
   });
 });

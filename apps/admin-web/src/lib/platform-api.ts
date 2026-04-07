@@ -378,10 +378,23 @@ export type VideoRecording = VideoSnapshot & {
   duration_seconds: number | null;
   playback_url: string | null;
   recorded_at: string | null;
+  retention_state: 'retained' | 'deleted';
+  retention_reason: string | null;
+  retained_at: string | null;
+  deleted_at: string | null;
 };
 
 export type VideoRecordingListResponse = {
   items: VideoRecording[];
+  total_count: number;
+  retained_count: number;
+  deleted_count: number;
+  retention_state: string;
+};
+
+export type VideoRecordingRetentionInput = {
+  retention_state: 'retained' | 'deleted';
+  reason?: string | null;
 };
 
 export type VideoSessionSummaryInput = {

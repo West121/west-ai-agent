@@ -5,7 +5,12 @@ import re
 from typing import Final
 
 from app.decision.pipeline import DecisionPipeline
-from app.workflow.graph import ComplexWorkflowGraph, classify_flow_category, normalize_query
+from app.workflow.graph import (
+    COMPLEX_FLOW_CATEGORIES,
+    ComplexWorkflowGraph,
+    classify_flow_category,
+    normalize_query,
+)
 from app.workflow.types import SupportWorkflowRequest, SupportWorkflowResult, WorkflowAction
 
 PHONE_PATTERN: Final = re.compile(r"(?<!\d)(1[3-9]\d{9})(?!\d)")
@@ -101,8 +106,12 @@ class SupportWorkflowService:
     def run(self, request: SupportWorkflowRequest) -> SupportWorkflowResult:
         normalized_query = normalize_query(request.query)
         flow_category = classify_flow_category(request.query)
+        if flow_category is None:
+            context_category = request.context_slots.get("issue_category")
+            if context_category in COMPLEX_FLOW_CATEGORIES:
+                flow_category = context_category
         if flow_category is not None:
-            graph_result = self.graph.run(request)
+            graph_result = self.graph.run(request, flow_category=flow_category)
             return SupportWorkflowResult(
                 query=graph_result.query,
                 normalized_query=graph_result.normalized_query,

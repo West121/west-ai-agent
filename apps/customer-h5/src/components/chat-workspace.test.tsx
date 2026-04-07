@@ -111,14 +111,32 @@ describe('ChatWorkspace', () => {
   });
 
   it('shows AI answer advice after sending a customer message', async () => {
-    const requestAiDecision = vi.spyOn(customerApi, 'requestAiDecision').mockResolvedValue({
-      query: '退款多久到账？',
-      decision: 'clarify',
-      answer: null,
-      clarification: '请补充订单号和手机号。',
-      workflow_mode: 'langgraph',
-      confidence: 0.78,
-    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          query: '退款多久到账？',
+          decision: 'clarify',
+          answer: null,
+          clarification: '请补充订单号和手机号。',
+          workflow_mode: 'langgraph',
+          flow_category: 'refund',
+          next_action: 'collect_slot',
+          next_prompt: '退款流程还差 订单号、手机号，补齐后即可转人工或继续处理。',
+          confidence: 0.78,
+          merged_slots: {
+            issue_category: 'refund',
+          },
+          required_slots: ['order_id', 'contact_phone'],
+          missing_slots: ['order_id', 'contact_phone'],
+          graph_trace: ['langgraph:classify:refund', 'langgraph:extract_slots'],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
 
     render(<ChatWorkspace mode="standalone" />, { wrapper: createWrapper() });
 
@@ -129,20 +147,27 @@ describe('ChatWorkspace', () => {
     await userEvent.click(screen.getByRole('button', { name: '发送消息' }));
 
     await waitFor(() => {
-      expect(requestAiDecision).toHaveBeenCalledWith({
-        query: '退款多久到账？',
-        endpoint: 'triage',
-      });
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8020/workflow/triage',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            query: '退款多久到账？',
+            context_slots: {},
+          }),
+        }),
+      );
     });
 
     expect(await screen.findByText('AI 建议')).toBeInTheDocument();
     expect(await screen.findByText(/流程 langgraph/)).toBeInTheDocument();
+    expect(await screen.findByText(/类别 refund/)).toBeInTheDocument();
     expect(await screen.findByText(/AI 需要更多信息/)).toBeInTheDocument();
   });
 
   it('shows handoff guidance when AI confidence is low', async () => {
     vi.spyOn(customerApi, 'requestAiDecision').mockResolvedValue({
-      query: '这个售后问题很复杂',
+      query: '这个问题比较复杂',
       decision: 'handoff',
       answer: null,
       clarification: null,
@@ -159,7 +184,7 @@ describe('ChatWorkspace', () => {
     await userEvent.click(screen.getByRole('button', { name: '创建并连接会话' }));
 
     const input = await screen.findByLabelText('message');
-    await userEvent.type(input, '这个售后问题很复杂');
+    await userEvent.type(input, '这个问题比较复杂');
     await userEvent.click(screen.getByRole('button', { name: '发送消息' }));
 
     const notices = await screen.findAllByText('建议转人工继续处理当前问题。');
@@ -168,31 +193,111 @@ describe('ChatWorkspace', () => {
     expect(screen.getByRole('link', { name: '留言' })).toBeInTheDocument();
   });
 
-  it('routes refund-like issues to langgraph triage flow', async () => {
-    const requestAiDecision = vi.spyOn(customerApi, 'requestAiDecision').mockResolvedValue({
-      query: '退款不到账，订单号 123456 手机号 13800000000',
-      decision: 'handoff',
-      answer: null,
-      clarification: null,
-      workflow_mode: 'langgraph',
-      confidence: 0.91,
-    });
+  it('routes refund-like issues to langgraph triage flow and preserves slots across turns', async () => {
+    const fetchMock = vi.fn();
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            query: '退款不到账，订单号 TK2026040601',
+            decision: 'clarify',
+            answer: null,
+            clarification: '请补充手机号。',
+            workflow_mode: 'langgraph',
+            flow_category: 'refund',
+            next_action: 'collect_slot',
+            next_prompt: '退款流程还差 手机号，补齐后即可转人工或继续处理。',
+            confidence: 0.78,
+            merged_slots: {
+              issue_category: 'refund',
+              order_id: 'TK2026040601',
+            },
+            required_slots: ['order_id', 'contact_phone'],
+            missing_slots: ['contact_phone'],
+            graph_trace: ['langgraph:classify:refund', 'langgraph:merge_context'],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            query: '手机号是 13800000000',
+            decision: 'handoff',
+            answer: null,
+            clarification: null,
+            workflow_mode: 'langgraph',
+            flow_category: 'refund',
+            next_action: 'handoff',
+            next_prompt: '已准备好转人工，可附带当前槽位和摘要直接派单。',
+            confidence: 0.91,
+            merged_slots: {
+              issue_category: 'refund',
+              order_id: 'TK2026040601',
+              contact_phone: '13800000000',
+            },
+            required_slots: ['order_id', 'contact_phone'],
+            missing_slots: [],
+            graph_trace: ['langgraph:classify:refund', 'langgraph:decide:handoff'],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      );
+    vi.stubGlobal('fetch', fetchMock);
 
     render(<ChatWorkspace mode="standalone" />, { wrapper: createWrapper() });
 
     await userEvent.click(screen.getByRole('button', { name: '创建并连接会话' }));
 
     const input = await screen.findByLabelText('message');
-    await userEvent.type(input, '退款不到账，订单号 123456 手机号 13800000000');
+    await userEvent.type(input, '退款不到账，订单号 TK2026040601');
     await userEvent.click(screen.getByRole('button', { name: '发送消息' }));
 
     await waitFor(() => {
-      expect(requestAiDecision).toHaveBeenCalledWith({
-        query: '退款不到账，订单号 123456 手机号 13800000000',
-        endpoint: 'triage',
-      });
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        'http://localhost:8020/workflow/triage',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            query: '退款不到账，订单号 TK2026040601',
+            context_slots: {},
+          }),
+        }),
+      );
     });
 
     expect(await screen.findByText(/流程 langgraph/)).toBeInTheDocument();
+    expect(await screen.findByText(/类别 refund/)).toBeInTheDocument();
+    expect(await screen.findByText(/AI 需要更多信息/)).toBeInTheDocument();
+
+    await userEvent.type(input, '手机号是 13800000000');
+    await userEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        'http://localhost:8020/workflow/triage',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            query: '手机号是 13800000000',
+            context_slots: {
+              issue_category: 'refund',
+              order_id: 'TK2026040601',
+            },
+          }),
+        }),
+      );
+    });
+
+    expect((await screen.findAllByText(/已准备好转人工/)).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/类别 refund/)).toBeInTheDocument();
   });
 });

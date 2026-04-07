@@ -146,6 +146,22 @@ def test_conversation_analytics_overview_aggregates_trends_distributions_duratio
         assert payload["hit_rate"]["summary_coverage_rate"] == 100.0
         assert payload["hit_rate"]["satisfaction_coverage_rate"] == 100.0
         assert payload["hit_rate"]["satisfaction_high_score_rate"] == 100.0
+
+        filtered_response = client.get(
+            "/conversation/analytics/overview",
+            params={"window_days": 7, "channel": "web"},
+        )
+        assert filtered_response.status_code == 200
+        filtered_payload = filtered_response.json()
+        filtered_trend = filtered_payload["trend"]
+        assert len(filtered_trend) == 1
+        assert filtered_trend[0]["created_count"] == 1
+        assert filtered_trend[0]["transferred_count"] == 1
+        filtered_status_distribution = {item["label"]: item["value"] for item in filtered_payload["status_distribution"]}
+        filtered_channel_distribution = {item["label"]: item["value"] for item in filtered_payload["channel_distribution"]}
+        assert filtered_status_distribution["ended"] == 1
+        assert filtered_channel_distribution["web"] == 1
+        assert "app" not in filtered_channel_distribution
     finally:
         session.close()
         Base.metadata.drop_all(bind=engine)

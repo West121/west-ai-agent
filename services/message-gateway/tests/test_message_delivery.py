@@ -178,5 +178,29 @@ def test_video_signaling_events_relay_to_peer(
             assert relay["conversation_id"] == "video-room-1"
             assert relay["sender_id"] == "agent-1"
             assert relay["sender_role"] == "agent"
+            assert relay["received_at"]
             for key, value in expected_keys.items():
                 assert relay[key] == value
+
+
+def test_video_answer_can_flow_from_customer_back_to_agent() -> None:
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/video-answer-room?client_id=agent-1&role=agent") as agent_ws:
+        agent_ws.receive_json()
+        with client.websocket_connect("/ws/video-answer-room?client_id=customer-1&role=customer") as customer_ws:
+            customer_ws.receive_json()
+
+            customer_ws.send_json(
+                {
+                    "type": "video.answer",
+                    "description": {"type": "answer", "sdp": "answer-sdp"},
+                }
+            )
+
+            relay = agent_ws.receive_json()
+            assert relay["type"] == "video.answer"
+            assert relay["conversation_id"] == "video-answer-room"
+            assert relay["sender_id"] == "customer-1"
+            assert relay["sender_role"] == "customer"
+            assert relay["description"]["sdp"] == "answer-sdp"

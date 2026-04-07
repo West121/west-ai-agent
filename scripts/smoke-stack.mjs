@@ -52,8 +52,9 @@ async function main() {
     method: 'POST',
     headers: jsonHeaders(),
     body: JSON.stringify({
-      model: 'qwen-plus',
-      messages: [{ role: 'user', content: '请总结这次烟测通过' }],
+      model: 'qwen3.6-plus',
+      messages: [{ role: 'user', content: '只回复：烟测通过' }],
+      temperature: 0,
     }),
   });
 

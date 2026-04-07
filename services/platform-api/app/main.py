@@ -4,6 +4,7 @@ from time import sleep
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 
 from app.api.router import api_router
@@ -28,6 +29,7 @@ def ensure_schema() -> None:
     for attempt in range(1, settings.app_database_startup_retries + 1):
         try:
             Base.metadata.create_all(bind=engine)
+            repair_legacy_schema()
             return
         except OperationalError as error:
             last_error = error
@@ -37,6 +39,46 @@ def ensure_schema() -> None:
 
     if last_error is not None:
         raise last_error
+
+
+def repair_legacy_schema() -> None:
+    inspector = inspect(engine)
+    table_repairs = {
+        "video_sessions": {
+            "ticket_id": "INTEGER",
+            "ai_summary": "TEXT NOT NULL DEFAULT '暂无摘要'",
+            "operator_summary": "TEXT",
+            "issue_category": "VARCHAR(255)",
+            "resolution": "TEXT",
+            "next_action": "TEXT",
+            "handoff_reason": "TEXT",
+            "follow_up_required": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "summary_updated_at": "TIMESTAMP",
+        },
+        "video_snapshots": {
+            "entry_type": "VARCHAR(32) NOT NULL DEFAULT 'snapshot'",
+            "file_key": "VARCHAR(255)",
+            "file_name": "VARCHAR(255)",
+            "mime_type": "VARCHAR(128)",
+            "duration_seconds": "INTEGER",
+            "playback_url": "VARCHAR(1024)",
+            "retention_state": "VARCHAR(32) NOT NULL DEFAULT 'retained'",
+            "retention_reason": "TEXT",
+            "retained_at": "TIMESTAMP",
+            "deleted_at": "TIMESTAMP",
+            "recorded_at": "TIMESTAMP",
+        },
+    }
+
+    with engine.begin() as connection:
+        for table_name, columns in table_repairs.items():
+            if not inspector.has_table(table_name):
+                continue
+            existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, definition in columns.items():
+                if column_name in existing_columns:
+                    continue
+                connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"))
 
 
 def validate_runtime_settings() -> None:

@@ -219,6 +219,115 @@ def test_video_recordings_and_post_call_summary() -> None:
         Base.metadata.drop_all(bind=engine)
 
 
+def test_video_recording_governance_filters_and_retention_state_changes() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(bind=engine)
+    session = TestingSessionLocal()
+
+    try:
+        customer = CustomerProfile(external_id="ext-video-004", name="Governance User", email="governance@example.com")
+        session.add(customer)
+        session.commit()
+        session.refresh(customer)
+
+        conversation = Conversation(customer_profile_id=customer.id, channel="video", assignee="agent-video", status="open")
+        session.add(conversation)
+        session.commit()
+        session.refresh(conversation)
+
+        client = TestClient(build_test_app(session))
+        started = client.post(
+            "/video/sessions/start",
+            json={
+                "customer_profile_id": customer.id,
+                "conversation_id": conversation.id,
+                "assignee": "agent-video",
+            },
+        )
+        assert started.status_code == 201
+        session_id = started.json()["id"]
+
+        retained = client.post(
+            f"/video/sessions/{session_id}/recordings",
+            json={
+                "label": "保留录制",
+                "note": "待复核",
+                "file_key": "video-recordings/session-4/keep.webm",
+                "file_name": "keep.webm",
+                "mime_type": "video/webm",
+                "duration_seconds": 15,
+            },
+        )
+        assert retained.status_code == 201
+
+        deleted = client.post(
+            f"/video/sessions/{session_id}/recordings",
+            json={
+                "label": "删除录制",
+                "note": "待清理",
+                "file_key": "video-recordings/session-4/delete.webm",
+                "file_name": "delete.webm",
+                "mime_type": "video/webm",
+                "duration_seconds": 22,
+            },
+        )
+        assert deleted.status_code == 201
+
+        delete_response = client.patch(
+            f"/video/recordings/{deleted.json()['id']}/retention",
+            json={"retention_state": "deleted", "reason": "合规清理"},
+        )
+        assert delete_response.status_code == 200
+        assert delete_response.json()["retention_state"] == "deleted"
+        assert delete_response.json()["retention_reason"] == "合规清理"
+
+        default_listing = client.get(f"/video/sessions/{session_id}/recordings")
+        assert default_listing.status_code == 200
+        assert default_listing.json()["retention_state"] == "retained"
+        assert default_listing.json()["retained_count"] == 1
+        assert default_listing.json()["deleted_count"] == 1
+        assert len(default_listing.json()["items"]) == 1
+        assert default_listing.json()["items"][0]["label"] == "保留录制"
+
+        deleted_listing = client.get(f"/video/sessions/{session_id}/recordings?retention_state=deleted")
+        assert deleted_listing.status_code == 200
+        assert len(deleted_listing.json()["items"]) == 1
+        assert deleted_listing.json()["items"][0]["label"] == "删除录制"
+        assert deleted_listing.json()["items"][0]["retention_state"] == "deleted"
+
+        keyword_listing = client.get(f"/video/sessions/{session_id}/recordings?retention_state=all&keyword=清理")
+        assert keyword_listing.status_code == 200
+        assert len(keyword_listing.json()["items"]) == 1
+        assert keyword_listing.json()["items"][0]["label"] == "删除录制"
+
+        detail = client.get(f"/video/recordings/{deleted.json()['id']}")
+        assert detail.status_code == 200
+        assert detail.json()["retention_state"] == "deleted"
+        assert detail.json()["deleted_at"] is not None
+
+        restore_response = client.patch(
+            f"/video/recordings/{deleted.json()['id']}/retention",
+            json={"retention_state": "retained"},
+        )
+        assert restore_response.status_code == 200
+        assert restore_response.json()["retention_state"] == "retained"
+        assert restore_response.json()["deleted_at"] is None
+
+        restored_listing = client.get(f"/video/sessions/{session_id}/recordings")
+        assert restored_listing.status_code == 200
+        assert restored_listing.json()["retained_count"] == 2
+        assert restored_listing.json()["deleted_count"] == 0
+        assert restored_listing.json()["total_count"] == 2
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
+
+
 def test_video_recording_upload_and_playback(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("APP_MEDIA_ROOT", str(tmp_path / "media"))
     get_settings.cache_clear()

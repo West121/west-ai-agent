@@ -32,6 +32,7 @@ import {
   type ServiceAnalyticsOverview,
   type VideoRecording,
   type VideoRecordingListResponse,
+  type VideoRecordingRetentionInput,
   type VideoSession,
   type VideoSessionSummaryInput,
   type VideoSessionEndInput,
@@ -204,12 +205,20 @@ export function useVideoSnapshots(sessionId: number | null | undefined) {
   });
 }
 
-export function useVideoRecordings(sessionId: number | null | undefined) {
+export function useVideoRecordings(sessionId: number | null | undefined, retentionState?: 'retained' | 'deleted' | 'all', keyword?: string) {
   return useQuery({
-    queryKey: ['platform-api', 'video', 'recordings', sessionId],
+    queryKey: ['platform-api', 'video', 'recordings', sessionId, retentionState ?? 'retained', keyword ?? ''],
     enabled: typeof sessionId === 'number',
     queryFn: async (): Promise<VideoRecording[]> => {
-      const payload = await requestJson<VideoRecordingListResponse>(`/video/sessions/${sessionId}/recordings`);
+      const searchParams = new URLSearchParams();
+      if (retentionState && retentionState !== 'all') {
+        searchParams.set('retention_state', retentionState);
+      }
+      if (keyword?.trim()) {
+        searchParams.set('keyword', keyword.trim());
+      }
+      const path = `/video/sessions/${sessionId}/recordings${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+      const payload = await requestJson<VideoRecordingListResponse>(path);
       return payload.items ?? [];
     },
   });
@@ -296,6 +305,19 @@ export function useUploadVideoRecording() {
         body: formData,
       });
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
+    },
+  });
+}
+
+export function useUpdateVideoRecordingRetention() {
+  return useMutation({
+    mutationFn: (variables: { recordingId: number; payload: VideoRecordingRetentionInput }) =>
+      requestJson<VideoRecording>(`/video/recordings/${variables.recordingId}/retention`, {
+        method: 'PATCH',
+        body: variables.payload,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['platform-api'] });
     },

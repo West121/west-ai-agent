@@ -20,6 +20,7 @@ from app.modules.video.schemas import (
     VideoSnapshotCreate,
     VideoRecordingCreate,
     VideoRecordingRead,
+    VideoRecordingRetentionUpdate,
 )
 
 
@@ -51,7 +52,11 @@ def _load_current_video_session(db: Session) -> VideoSession | None:
 
 def _session_read(session: VideoSession) -> VideoSessionRead:
     snapshots = [snapshot for snapshot in session.snapshots if snapshot.entry_type == "snapshot"]
-    recordings = [snapshot for snapshot in session.snapshots if snapshot.entry_type == "recording"]
+    recordings = [
+        snapshot
+        for snapshot in session.snapshots
+        if snapshot.entry_type == "recording" and snapshot.retention_state != "deleted"
+    ]
     latest_snapshot_at = max((snapshot.created_at for snapshot in snapshots), default=None)
     latest_recording_at = max((snapshot.recorded_at or snapshot.created_at for snapshot in recordings), default=None)
     return VideoSessionRead(
@@ -93,6 +98,10 @@ def _recording_read(recording: VideoSnapshot) -> VideoRecordingRead:
         mime_type=recording.mime_type,
         duration_seconds=recording.duration_seconds,
         playback_url=recording.playback_url or f"/video/recordings/{recording.id}/playback",
+        retention_state=recording.retention_state,
+        retention_reason=recording.retention_reason,
+        retained_at=recording.retained_at,
+        deleted_at=recording.deleted_at,
         recorded_at=recording.recorded_at or recording.created_at,
         created_at=recording.created_at,
     )
@@ -181,7 +190,7 @@ def list_video_snapshots(db: Session, session_id: int) -> list[VideoSnapshot]:
     return list(db.scalars(stmt).all())
 
 
-def list_video_recordings(db: Session, session_id: int) -> list[VideoSnapshot]:
+def _load_session_recordings(db: Session, session_id: int) -> list[VideoSnapshot]:
     _load_video_session(db, session_id)
     stmt = (
         select(VideoSnapshot)
@@ -190,6 +199,29 @@ def list_video_recordings(db: Session, session_id: int) -> list[VideoSnapshot]:
         .order_by(VideoSnapshot.created_at.desc(), VideoSnapshot.id.desc())
     )
     return list(db.scalars(stmt).all())
+
+
+def list_video_recordings(
+    db: Session,
+    session_id: int,
+    retention_state: str | None = "retained",
+    keyword: str | None = None,
+) -> list[VideoSnapshot]:
+    recordings = _load_session_recordings(db, session_id)
+    filtered = recordings
+    if retention_state and retention_state != "all":
+        filtered = [recording for recording in filtered if recording.retention_state == retention_state]
+    if keyword and keyword.strip():
+        lowered = keyword.strip().lower()
+        filtered = [
+            recording
+            for recording in filtered
+            if lowered in recording.label.lower()
+            or lowered in (recording.note or "").lower()
+            or lowered in (recording.file_name or "").lower()
+            or lowered in (recording.retention_reason or "").lower()
+        ]
+    return filtered
 
 
 def get_video_recording(db: Session, recording_id: int) -> VideoSnapshot:
@@ -201,6 +233,41 @@ def get_video_recording(db: Session, recording_id: int) -> VideoSnapshot:
     if recording is None:
         raise _not_found("video recording", recording_id)
     return recording
+
+
+def update_video_recording_retention(
+    db: Session,
+    recording_id: int,
+    data: VideoRecordingRetentionUpdate,
+) -> VideoSnapshot:
+    recording = get_video_recording(db, recording_id)
+    retention_state = data.retention_state
+    reason = data.reason.strip() if data.reason and data.reason.strip() else None
+
+    if retention_state == "deleted":
+        recording.retention_state = "deleted"
+        recording.retention_reason = reason
+        recording.deleted_at = utcnow()
+    else:
+        recording.retention_state = "retained"
+        recording.retention_reason = None
+        recording.retained_at = utcnow()
+        recording.deleted_at = None
+
+    db.commit()
+    db.refresh(recording)
+    return recording
+
+
+def video_recordings_overview(db: Session, session_id: int) -> dict[str, int]:
+    recordings = _load_session_recordings(db, session_id)
+    retained_count = sum(1 for recording in recordings if recording.retention_state != "deleted")
+    deleted_count = sum(1 for recording in recordings if recording.retention_state == "deleted")
+    return {
+        "total_count": len(recordings),
+        "retained_count": retained_count,
+        "deleted_count": deleted_count,
+    }
 
 
 def create_video_snapshot(db: Session, session_id: int, data: VideoSnapshotCreate) -> VideoSnapshot:
@@ -239,6 +306,8 @@ def create_video_recording(db: Session, session_id: int, data: VideoRecordingCre
         mime_type=data.mime_type.strip() if data.mime_type and data.mime_type.strip() else None,
         duration_seconds=data.duration_seconds,
         playback_url=data.playback_url.strip() if data.playback_url and data.playback_url.strip() else None,
+        retention_state="retained",
+        retained_at=utcnow(),
         recorded_at=utcnow(),
     )
     db.add(recording)

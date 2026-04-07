@@ -109,7 +109,7 @@ def test_chat_completions_calls_openai_compatible_provider(monkeypatch) -> None:
             200,
             json={
                 "id": "chatcmpl-test",
-                "model": "qwen-plus",
+                "model": "qwen3.6-plus",
                 "choices": [
                     {
                         "index": 0,
@@ -132,7 +132,7 @@ def test_chat_completions_calls_openai_compatible_provider(monkeypatch) -> None:
     response = client.post(
         "/chat/completions",
         json={
-            "model": "openai_like:qwen-plus",
+            "model": "openai_like:qwen3.6-plus",
             "messages": [{"role": "user", "content": "hello"}],
             "temperature": 0.2,
         },
@@ -143,10 +143,10 @@ def test_chat_completions_calls_openai_compatible_provider(monkeypatch) -> None:
     assert body["provider"] == "openai_like"
     assert body["choices"][0]["message"]["content"] == "真实 Qwen 响应"
     assert body["usage"]["total_tokens"] == 18
-    assert body["model"] == "qwen-plus"
+    assert body["model"] == "qwen3.6-plus"
     assert captured["url"] == "https://example.invalid/v1/chat/completions"
     assert captured["auth"] == "Bearer test-key"
-    assert "\"model\":\"qwen-plus\"" in str(captured["body"])
+    assert "\"model\":\"qwen3.6-plus\"" in str(captured["body"])
 
 
 def test_chat_completions_accepts_openai_api_key_fallback(monkeypatch) -> None:
@@ -178,7 +178,7 @@ def test_chat_completions_accepts_openai_api_key_fallback(monkeypatch) -> None:
     response = client.post(
         "/chat/completions",
         json={
-            "model": "qwen-plus",
+            "model": "qwen3.6-plus",
             "messages": [{"role": "user", "content": "hello"}],
         },
     )
