@@ -16,6 +16,7 @@ from app.modules.service.models import LeaveMessage, Ticket
 from app.modules.auth.security import hash_password
 
 settings = get_settings()
+DEFAULT_JWT_SECRET = "dev-secret-for-platform-api-please-change"
 
 
 def ensure_schema() -> None:
@@ -24,11 +25,19 @@ def ensure_schema() -> None:
     Base.metadata.create_all(bind=engine)
 
 
+def validate_runtime_settings() -> None:
+    if settings.is_production and settings.app_jwt_secret == DEFAULT_JWT_SECRET:
+        raise RuntimeError("APP_JWT_SECRET must be overridden in production mode.")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    validate_runtime_settings()
     ensure_schema()
-    seed_default_admin()
-    seed_sample_data()
+    if settings.bootstrap_default_admin:
+        seed_default_admin()
+    if settings.bootstrap_sample_data:
+        seed_sample_data()
     yield
 
 

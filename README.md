@@ -31,6 +31,13 @@
 - `AI_SERVICE_*` 用于模型网关和检索配置
 - `POSTGRES_`、`REDIS_`、`MINIO_`、`OPENSEARCH_` 用于 Docker 依赖
 
+生产环境建议：
+
+- `APP_ENV=production`
+- `APP_JWT_SECRET` 必须替换默认值
+- `APP_BOOTSTRAP_DEFAULT_ADMIN=false`
+- `APP_BOOTSTRAP_SAMPLE_DATA=false`
+
 如果你希望根级脚本读取当前 shell 变量，先在仓库根目录执行：
 
 ```bash
@@ -208,3 +215,7 @@ bash scripts/restore-platform-data.sh /absolute/path/to/backup-dir
   - 先将 PostgreSQL、Redis、MinIO、OpenSearch 作为基础设施独立部署
   - 再为 `platform-api`、`message-gateway`、`ai-service`、`worker-jobs` 分别准备镜像和运行配置
   - 将模型密钥和业务密钥通过环境变量或密钥管理服务注入，不要写入仓库
+
+更细的生产部署步骤见：
+- [2026-04-07-production-runbook.md](/Users/west/dev/code/west/west-ai-agent/docs/superpowers/plans/2026-04-07-production-runbook.md)
+- [2026-04-07-acceptance-test-report.md](/Users/west/dev/code/west/west-ai-agent/docs/superpowers/plans/2026-04-07-acceptance-test-report.md)
