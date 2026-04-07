@@ -1,0 +1,74 @@
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Node / web
+node_modules/
+.pnpm-store/
+dist/
+build/
+.turbo/
+.next/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+htmlcov/
+*.db
+*.sqlite
+*.sqlite3
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.metadata
+build/
+ios/Pods/
+ios/.symlinks/
+android/.gradle/
+
+# Android / iOS artifacts
+*.apk
+*.aab
+*.ipa
+
+# Local infra / data
+tmp/
+.tmp/
+data/
+storage/
+
+# Search / cache
+opensearch-data/
+redis-data/
+minio-data/
+
+# Pencil / design exports
+exports/
+screenshots/

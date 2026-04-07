@@ -1,0 +1,2 @@
+"""Platform API application package."""
+

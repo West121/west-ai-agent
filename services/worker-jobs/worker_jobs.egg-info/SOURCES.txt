@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+app/__init__.py
+app/main.py
+app/sinks.py
+app/tasks.py
+tests/test_knowledge_jobs.py
+tests/test_main.py
+tests/test_sinks.py
+worker_jobs.egg-info/PKG-INFO
+worker_jobs.egg-info/SOURCES.txt
+worker_jobs.egg-info/dependency_links.txt
+worker_jobs.egg-info/entry_points.txt
+worker_jobs.egg-info/requires.txt
+worker_jobs.egg-info/top_level.txt

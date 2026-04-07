@@ -1,0 +1,38 @@
+{
+  "name": "enterprise-ai-customer-service-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "dev:admin": "pnpm --filter admin-web dev",
+    "dev:h5": "pnpm --filter customer-h5 dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "e2e:stack:up": "node ./scripts/start-e2e-stack.mjs",
+    "e2e:stack:down": "node ./scripts/stop-e2e-stack.mjs",
+    "test:e2e": "node ./scripts/run-e2e.mjs",
+    "test:e2e:headed": "node ./scripts/run-e2e.mjs --headed",
+    "test:e2e:debug": "node ./scripts/run-e2e.mjs --debug",
+    "test:e2e:install": "pnpm exec playwright install chromium",
+    "test:platform-api": "cd services/platform-api && uv run pytest -q",
+    "test:message-gateway": "cd services/message-gateway && uv run pytest -q",
+    "test:ai-service": "cd services/ai-service && uv run pytest -q",
+    "test:worker-jobs": "cd services/worker-jobs && uv run pytest -q",
+    "test:mobile-flutter": "bash ./scripts/verify-mobile-flutter.sh",
+    "mobile:android:doctor": "bash ./scripts/mobile-flutter-android-preflight.sh",
+    "mobile:android:doctor:fix": "bash ./scripts/mobile-flutter-android-preflight.sh --fix",
+    "mobile:android:build:debug": "bash ./scripts/mobile-flutter-android-build.sh debug",
+    "mobile:android:build:release": "bash ./scripts/mobile-flutter-android-build.sh release",
+    "test:smoke": "node ./scripts/run-smoke.mjs",
+    "test:smoke:local": "node ./scripts/smoke-stack.mjs",
+    "verify": "pnpm typecheck && pnpm build && pnpm test:platform-api && pnpm test:message-gateway && pnpm test:ai-service && pnpm test:worker-jobs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "playwright": "^1.59.1",
+    "turbo": "^2.5.3",
+    "typescript": "^5.9.3"
+  }
+}

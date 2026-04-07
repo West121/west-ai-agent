@@ -1,0 +1,30 @@
+Metadata-Version: 2.4
+Name: message-gateway
+Version: 0.1.0
+Summary: Message gateway service for west-ai-agent.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<1.0,>=0.115
+Requires-Dist: pydantic<3.0,>=2.10
+Requires-Dist: uvicorn[standard]<1.0,>=0.30
+Provides-Extra: dev
+Requires-Dist: httpx<1.0,>=0.27; extra == "dev"
+Requires-Dist: pytest<9.0,>=8.0; extra == "dev"
+
+# message-gateway
+
+Minimal FastAPI service scaffold.
+
+## Run
+
+```bash
+uv sync --extra dev
+uv run message-gateway
+```
+
+## Test
+
+```bash
+uv run pytest
+```
+

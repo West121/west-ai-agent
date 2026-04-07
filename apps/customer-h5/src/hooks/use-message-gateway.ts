@@ -11,6 +11,9 @@ export interface ChatMessage {
   senderRole: string;
   text: string;
   createdAt: string;
+  status: string;
+  ackedBy: string | null;
+  ackedAt: string | null;
 }
 
 interface UseMessageGatewayParams {
@@ -26,6 +29,19 @@ interface MessageNewPayload {
   sender_id: string;
   sender_role: string;
   text: string;
+  created_at?: string;
+  status?: string;
+  acked_by?: string | null;
+  acked_at?: string | null;
+}
+
+interface MessageAckPayload {
+  type: 'message.ack';
+  conversation_id: string;
+  message_id: string;
+  status?: string;
+  acked_by?: string | null;
+  acked_at?: string | null;
 }
 
 interface ConnectionAckPayload {
@@ -35,7 +51,12 @@ interface ConnectionAckPayload {
   role: string;
 }
 
-type GatewayEvent = MessageNewPayload | ConnectionAckPayload | { type: 'pong' } | { type: 'error'; detail?: string };
+type GatewayEvent =
+  | MessageNewPayload
+  | MessageAckPayload
+  | ConnectionAckPayload
+  | { type: 'pong' }
+  | { type: 'error'; detail?: string };
 
 function isMessageNewPayload(payload: unknown): payload is MessageNewPayload {
   if (typeof payload !== 'object' || payload === null) {
@@ -50,6 +71,19 @@ function isMessageNewPayload(payload: unknown): payload is MessageNewPayload {
     typeof record.sender_id === 'string' &&
     typeof record.sender_role === 'string' &&
     typeof record.text === 'string'
+  );
+}
+
+function isMessageAckPayload(payload: unknown): payload is MessageAckPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    return false;
+  }
+
+  const record = payload as Record<string, unknown>;
+  return (
+    record.type === 'message.ack' &&
+    typeof record.conversation_id === 'string' &&
+    typeof record.message_id === 'string'
   );
 }
 
@@ -108,17 +142,35 @@ export function useMessageGateway({ conversationId, clientId, role }: UseMessage
         }
 
         if (isMessageNewPayload(parsed)) {
-          setMessages((current) => [
-            ...current,
-            {
+          setMessages((current) =>
+            upsertMessage(current, {
               id: parsed.id,
               conversationId: parsed.conversation_id,
               senderId: parsed.sender_id,
               senderRole: parsed.sender_role,
               text: parsed.text,
-              createdAt: new Date().toISOString(),
-            },
-          ]);
+              createdAt: parsed.created_at ?? new Date().toISOString(),
+              status: parsed.status ?? 'sent',
+              ackedBy: parsed.acked_by ?? null,
+              ackedAt: parsed.acked_at ?? null,
+            }),
+          );
+          return;
+        }
+
+        if (isMessageAckPayload(parsed)) {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === parsed.message_id
+                ? {
+                    ...message,
+                    status: parsed.status ?? 'read',
+                    ackedBy: parsed.acked_by ?? message.ackedBy,
+                    ackedAt: parsed.acked_at ?? message.ackedAt,
+                  }
+                : message,
+            ),
+          );
           return;
         }
 
@@ -166,10 +218,58 @@ export function useMessageGateway({ conversationId, clientId, role }: UseMessage
     );
   }
 
+  function sendAck(messageId: string) {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN || !conversationId) {
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: 'message.ack',
+        message_id: messageId,
+      }),
+    );
+  }
+
+  function upsertMessage(current: ChatMessage[], incoming: ChatMessage): ChatMessage[] {
+    const index = current.findIndex((message) => message.id === incoming.id);
+    if (index === -1) {
+      return [...current, incoming];
+    }
+
+    const next = current.slice();
+    next[index] = mergeMessage(next[index], incoming);
+    return next;
+  }
+
+  function mergeMessage(existing: ChatMessage, incoming: ChatMessage): ChatMessage {
+    const currentScore = messageCompleteness(existing);
+    const incomingScore = messageCompleteness(incoming);
+
+    if (incomingScore > currentScore) {
+      return { ...existing, ...incoming };
+    }
+
+    if (incomingScore < currentScore) {
+      return { ...incoming, ...existing };
+    }
+
+    return { ...existing, ...incoming };
+  }
+
+  function messageCompleteness(message: ChatMessage): number {
+    return [message.createdAt, message.status, message.ackedBy, message.ackedAt, message.text].reduce(
+      (score, value) => score + (value ? 1 : 0),
+      0,
+    );
+  }
+
   return {
     ack,
     error,
     messages,
+    sendAck,
     sendMessage,
     status,
   };

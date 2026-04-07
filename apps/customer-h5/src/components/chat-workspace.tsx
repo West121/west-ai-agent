@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 
+import { Link } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
+
 import {
+  appendConversationMessage,
   createConversation,
   createCustomerProfile,
+  getConversationMessages,
+  getConversationSummary,
+  requestAiDecision,
+  submitConversationSatisfaction,
+  type AiDecisionRead,
   type ConversationRead,
+  type ConversationSummaryRead,
   type CustomerProfileRead,
 } from '@/lib/customer-h5-api';
+import { formatMessageReadStatus, mergeChatMessages } from '@/lib/chat-message-utils';
 import { platformApiBaseUrl, messageGatewayWsUrl } from '@/lib/runtime-config';
 import { useMessageGateway } from '@/hooks/use-message-gateway';
 
@@ -21,6 +32,13 @@ interface VisitorDraft {
   email: string;
   phone: string;
 }
+
+type AiAdviceState =
+  | { status: 'idle' }
+  | { status: 'loading'; query: string }
+  | { status: 'success'; query: string; response: AiDecisionRead }
+  | { status: 'handoff'; query: string; response: AiDecisionRead; message: string }
+  | { status: 'error'; query: string; message: string };
 
 function createDefaultVisitorDraft(): VisitorDraft {
   const suffix = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? `${Date.now()}`;
@@ -57,9 +75,99 @@ function statusLabel(status: string) {
   }
 }
 
+function renderSubmitResult(value: unknown): string {
+  if (value === undefined) {
+    return '后端未返回内容，已提交。';
+  }
+
+  if (value === null) {
+    return '后端返回空值，已提交。';
+  }
+
+  if (typeof value !== 'object') {
+    return `已提交：${String(value)}`;
+  }
+
+  const keys = Object.keys(value as Record<string, unknown>);
+  if (keys.length === 0) {
+    return '已提交，后端返回空对象。';
+  }
+
+  return `已提交，返回了 ${keys.length} 个字段。`;
+}
+
+function toSummaryValue(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim() ? value : null;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.map((item) => toSummaryValue(item)).filter(Boolean) as string[];
+    return items.length > 0 ? items.join(', ') : null;
+  }
+
+  if (typeof value === 'object') {
+    const text = JSON.stringify(value);
+    return text === '{}' ? null : text;
+  }
+
+  return String(value);
+}
+
+function buildSummaryRows(summary: ConversationSummaryRead | undefined) {
+  if (!summary) {
+    return [] as Array<{ label: string; value: string }>;
+  }
+
+  const candidates: Array<[string, unknown]> = [
+    ['主题', summary.subject ?? summary.title],
+    ['状态', summary.status],
+    ['摘要', summary.summary ?? summary.content],
+    ['客户', summary.customer_name ?? summary.visitor_name],
+    ['分组', summary.assigned_group],
+    ['接待类型', summary.current_assignee_type],
+    ['接待人', summary.current_assignee_id],
+    ['最后消息', summary.last_message],
+    ['结束时间', summary.ended_at],
+    ['更新时间', summary.updated_at],
+  ];
+
+  const rows = candidates
+    .map(([label, value]) => {
+      const formatted = toSummaryValue(value);
+      return formatted ? { label, value: formatted } : null;
+    })
+    .filter(Boolean) as Array<{ label: string; value: string }>;
+
+  if (rows.length > 0) {
+    return rows;
+  }
+
+  const raw = Object.entries(summary).reduce<Record<string, unknown>>((acc, [key, value]) => {
+    if (value !== null && value !== undefined && value !== '') {
+      acc[key] = value;
+    }
+    return acc;
+  }, {});
+
+  return Object.keys(raw).length > 0
+    ? [{ label: '原始数据', value: JSON.stringify(raw, null, 2) }]
+    : [];
+}
+
 export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
   const compact = mode === 'embedded';
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const satisfactionSectionRef = useRef<HTMLDivElement | null>(null);
+  const ackedMessageIdsRef = useRef<Set<string>>(new Set());
   const [profileIdInput, setProfileIdInput] = useState('');
   const [visitorDraft, setVisitorDraft] = useState<VisitorDraft>(() => createDefaultVisitorDraft());
   const [creatingSession, setCreatingSession] = useState(false);
@@ -67,6 +175,15 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
   const [conversation, setConversation] = useState<ConversationRead | null>(null);
   const [customerProfile, setCustomerProfile] = useState<CustomerProfileRead | null>(null);
   const [draftMessage, setDraftMessage] = useState('');
+  const [aiAdvice, setAiAdvice] = useState<AiAdviceState>({ status: 'idle' });
+  const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
+  const [satisfactionConversationId, setSatisfactionConversationId] = useState('');
+  const [satisfactionScore, setSatisfactionScore] = useState('5');
+  const [satisfactionComment, setSatisfactionComment] = useState('');
+  const [satisfactionSubmitting, setSatisfactionSubmitting] = useState(false);
+  const [satisfactionError, setSatisfactionError] = useState<string | null>(null);
+  const [satisfactionResult, setSatisfactionResult] = useState<unknown>(undefined);
+  const [satisfactionSubmitted, setSatisfactionSubmitted] = useState(false);
   const clientId = useMemo(
     () => `customer-h5-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`,
     [],
@@ -78,16 +195,51 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
     role: 'customer',
   });
 
+  const summaryQuery = useQuery({
+    queryKey: ['customer-h5', 'conversation-summary', conversation?.id],
+    queryFn: async () => {
+      if (!conversation) {
+        return undefined;
+      }
+
+      return getConversationSummary(conversation.id);
+    },
+    enabled: Boolean(conversation),
+  });
+
+  const historyQuery = useQuery({
+    queryKey: ['customer-h5', 'conversation-messages', conversation?.id],
+    queryFn: async () => {
+      if (!conversation) {
+        return undefined;
+      }
+
+      return getConversationMessages(conversation.id);
+    },
+    enabled: Boolean(conversation),
+  });
+
   useEffect(() => {
     if (gateway.status === 'open') {
       textareaRef.current?.focus();
     }
   }, [gateway.status]);
 
+  useEffect(() => {
+    setSatisfactionConversationId(conversation ? String(conversation.id) : '');
+  }, [conversation?.id]);
+
+  useEffect(() => {
+    ackedMessageIdsRef.current.clear();
+  }, [conversation?.id]);
+
   async function handleCreateSession() {
     setCreatingSession(true);
     setSessionError(null);
     setCustomerProfile(null);
+    setConversation(null);
+    setHandoffNotice(null);
+    setAiAdvice({ status: 'idle' });
 
     try {
       let profileId = Number(profileIdInput.trim());
@@ -120,7 +272,7 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
     }
   }
 
-  function handleSendMessage(event?: FormEvent) {
+  async function handleSendMessage(event?: FormEvent) {
     event?.preventDefault();
 
     const text = draftMessage.trim();
@@ -131,8 +283,46 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
     try {
       gateway.sendMessage(text);
       setDraftMessage('');
+      void runAiFollowUp(text);
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : '发送消息失败');
+    }
+  }
+
+  async function runAiFollowUp(query: string) {
+    setAiAdvice({ status: 'loading', query });
+
+    try {
+      const decision = await requestAiDecision({ query, endpoint: 'answer' });
+
+      if (decision.decision === 'answer' && decision.answer) {
+        await appendConversationMessage(conversation!.id, {
+          sender_id: 'ai-bot',
+          sender_role: 'assistant',
+          text: decision.answer,
+        });
+        setAiAdvice({ status: 'success', query, response: decision });
+        setHandoffNotice(null);
+        return;
+      }
+
+      if (decision.decision === 'clarify' && decision.clarification) {
+        await appendConversationMessage(conversation!.id, {
+          sender_id: 'ai-bot',
+          sender_role: 'assistant',
+          text: decision.clarification,
+        });
+        setAiAdvice({ status: 'success', query, response: decision });
+        setHandoffNotice('AI 需要更多信息，已返回补充提问。');
+        return;
+      }
+
+      const message = buildHandoffMessage(decision);
+      setAiAdvice({ status: 'handoff', query, response: decision, message });
+      setHandoffNotice(message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI 决策请求失败';
+      setAiAdvice({ status: 'error', query, message });
     }
   }
 
@@ -143,8 +333,94 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
     }
   }
 
-  const messages = gateway.messages;
-  const conversationState = conversation ? `#${conversation.id} · ${conversation.status}` : '未创建';
+  async function handleSubmitSatisfaction(event: FormEvent) {
+    event.preventDefault();
+    setSatisfactionSubmitting(true);
+    setSatisfactionError(null);
+    setSatisfactionSubmitted(false);
+
+    try {
+      const conversationId = satisfactionConversationId.trim();
+      if (!conversationId) {
+        throw new Error('conversation id 不能为空');
+      }
+
+      const score = Number(satisfactionScore);
+      if (!Number.isInteger(score) || score < 1 || score > 5) {
+        throw new Error('score 只能是 1 到 5');
+      }
+
+      const response = await submitConversationSatisfaction(conversationId, {
+        score,
+        comment: satisfactionComment.trim() || null,
+      });
+      setSatisfactionResult(response);
+      setSatisfactionSubmitted(true);
+    } catch (error) {
+      setSatisfactionError(error instanceof Error ? error.message : '满意度提交失败');
+      setSatisfactionResult(undefined);
+      setSatisfactionSubmitted(false);
+    } finally {
+      setSatisfactionSubmitting(false);
+    }
+  }
+
+  function scrollToSatisfaction() {
+    satisfactionSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  const historyMessages = useMemo(
+    () =>
+      historyQuery.data?.items.map((message) => ({
+        id: message.id,
+        conversationId: message.conversation_id,
+        senderId: message.sender_id,
+        senderRole: message.sender_role,
+        text: message.text,
+        createdAt: message.created_at,
+        status: message.status,
+        ackedBy: message.acked_by,
+        ackedAt: message.acked_at,
+      })) ?? [],
+    [historyQuery.data],
+  );
+  const combinedMessages = useMemo(
+    () => mergeChatMessages(historyMessages, gateway.messages),
+    [gateway.messages, historyMessages],
+  );
+  const effectiveConversationStatus = summaryQuery.data?.status ?? conversation?.status ?? null;
+  const conversationState = conversation ? `#${conversation.id} · ${effectiveConversationStatus ?? conversation.status}` : '未创建';
+  const summaryRows = buildSummaryRows(summaryQuery.data);
+  const hasMessages = combinedMessages.length > 0;
+  const historyLoading = Boolean(conversation) && historyQuery.isLoading;
+  const inputDisabled = !conversation || effectiveConversationStatus === 'ended';
+  const historyError = historyQuery.isError
+    ? historyQuery.error instanceof Error
+      ? historyQuery.error.message
+      : '历史消息读取失败'
+    : null;
+
+  useEffect(() => {
+    if (!conversation || gateway.status !== 'open') {
+      return;
+    }
+
+    for (const message of combinedMessages) {
+      const shouldAck =
+        message.senderRole !== 'customer' &&
+        message.senderId !== clientId &&
+        message.status !== 'read' &&
+        message.ackedBy !== clientId &&
+        !ackedMessageIdsRef.current.has(message.id);
+
+      if (!shouldAck) {
+        continue;
+      }
+
+      gateway.sendAck(message.id);
+      ackedMessageIdsRef.current.add(message.id);
+    }
+  }, [clientId, combinedMessages, conversation, gateway]);
 
   return (
     <div
@@ -298,6 +574,131 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
             ) : null}
           </div>
         </section>
+
+        <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-soft backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-950">会话摘要</h3>
+            <button
+              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-200 disabled:opacity-60"
+              disabled={!conversation}
+              onClick={() => summaryQuery.refetch()}
+              type="button"
+            >
+              刷新
+            </button>
+          </div>
+
+          {!conversation ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
+              先创建会话后才会读取摘要。
+            </div>
+          ) : summaryQuery.isLoading ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+              正在读取摘要...
+            </div>
+          ) : summaryQuery.isError ? (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm leading-6 text-rose-700">
+              摘要读取失败：{summaryQuery.error instanceof Error ? summaryQuery.error.message : '未知错误'}
+            </div>
+          ) : summaryRows.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
+              当前会话暂无摘要数据。
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {summaryRows.map((item) => (
+                <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                    {item.label}
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section ref={satisfactionSectionRef} className="rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-soft backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-950">满意度提交</h3>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+              会话结束后使用
+            </span>
+          </div>
+
+          <form className="mt-4 space-y-3" onSubmit={handleSubmitSatisfaction}>
+            <label className="block">
+              <span className="mb-2 block text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
+                conversation id
+              </span>
+              <input
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                placeholder="可手动输入历史会话 id"
+                value={satisfactionConversationId}
+                onChange={(event) => setSatisfactionConversationId(event.target.value)}
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
+                score
+              </span>
+              <select
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                value={satisfactionScore}
+                onChange={(event) => setSatisfactionScore(event.target.value)}
+              >
+                <option value="1">1 - 很差</option>
+                <option value="2">2 - 较差</option>
+                <option value="3">3 - 一般</option>
+                <option value="4">4 - 满意</option>
+                <option value="5">5 - 非常满意</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
+                comment
+              </span>
+              <textarea
+                className="min-h-[110px] w-full rounded-3xl border border-slate-200 bg-white px-4 py-4 text-sm leading-6 text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                placeholder="可选补充说明"
+                value={satisfactionComment}
+                onChange={(event) => setSatisfactionComment(event.target.value)}
+              />
+            </label>
+
+            <p className="text-xs leading-5 text-slate-500">
+              接口路径：`POST /conversation/conversations/:id/satisfaction`
+            </p>
+
+            <button
+              className="inline-flex w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={satisfactionSubmitting}
+              type="submit"
+            >
+              {satisfactionSubmitting ? '提交中...' : '提交满意度'}
+            </button>
+
+            {satisfactionError ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {satisfactionError}
+              </div>
+            ) : null}
+
+            {satisfactionSubmitted && !satisfactionError ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {renderSubmitResult(satisfactionResult)}
+              </div>
+            ) : null}
+
+            {effectiveConversationStatus !== 'ended' ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+                当前会话状态仍是 {effectiveConversationStatus ?? 'unknown'}。满意度通常在会话结束后提交，当前仅提供入口。
+              </div>
+            ) : null}
+          </form>
+        </section>
       </aside>
 
       <section className="flex min-h-[640px] flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-soft backdrop-blur">
@@ -309,16 +710,82 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
                 {conversation ? `会话 #${conversation.id}` : '等待创建会话'}
               </h3>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span className="rounded-full bg-slate-100 px-3 py-1">client {clientId}</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">
-                socket {statusLabel(gateway.status)}
-              </span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">
-                messages {messages.length}
-              </span>
-            </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span className="rounded-full bg-slate-100 px-3 py-1">client {clientId}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1">
+              socket {statusLabel(gateway.status)}
+            </span>
+            <span className="rounded-full bg-slate-100 px-3 py-1">
+              messages {combinedMessages.length}
+            </span>
           </div>
+        </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-800"
+              type="button"
+              onClick={() => {
+                setHandoffNotice('转人工入口已打开，后端接入后可在这里切换到人工接待。');
+              }}
+            >
+              转人工
+            </button>
+            <Link
+              className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+              to="/leave-message"
+            >
+              留言
+            </Link>
+            <button
+              className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+              type="button"
+              onClick={scrollToSatisfaction}
+            >
+              满意度
+            </button>
+          </div>
+
+          {handoffNotice ? (
+            <div className="mt-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm leading-6 text-cyan-900">
+              {handoffNotice}
+            </div>
+          ) : null}
+
+          {aiAdvice.status !== 'idle' ? (
+            <div
+              className={[
+                'mt-3 rounded-2xl border px-4 py-3 text-sm leading-6',
+                aiAdvice.status === 'success'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : aiAdvice.status === 'loading'
+                    ? 'border-slate-200 bg-slate-50 text-slate-700'
+                    : aiAdvice.status === 'error'
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : 'border-amber-200 bg-amber-50 text-amber-900',
+              ].join(' ')}
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.24em]">AI 建议</p>
+              {aiAdvice.status === 'loading' ? <p className="mt-2">正在分析刚刚发送的问题...</p> : null}
+              {aiAdvice.status === 'success' ? (
+                <>
+                  <p className="mt-2 whitespace-pre-wrap">{aiAdvice.response.answer}</p>
+                  <p className="mt-1 text-xs opacity-80">
+                    决策：{aiAdvice.response.decision} · 置信度 {aiAdvice.response.confidence.toFixed(2)}
+                  </p>
+                </>
+              ) : null}
+              {aiAdvice.status === 'handoff' ? (
+                <>
+                  <p className="mt-2">{aiAdvice.message}</p>
+                  <p className="mt-1 text-xs opacity-80">
+                    决策：{aiAdvice.response.decision} · 置信度 {aiAdvice.response.confidence.toFixed(2)}
+                  </p>
+                </>
+              ) : null}
+              {aiAdvice.status === 'error' ? <p className="mt-2">{aiAdvice.message}</p> : null}
+            </div>
+          ) : null}
 
           {gateway.ack ? (
             <p className="mt-3 text-sm text-slate-600">
@@ -330,13 +797,29 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
               创建会话后会自动连接 websocket。当前页面仅依赖平台 API 与 message-gateway。
             </p>
           )}
+
+          {historyError ? (
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+              历史消息读取失败：{historyError}。实时消息仍可继续展示。
+            </div>
+          ) : null}
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-          {messages.length > 0 ? (
+          {historyLoading && !hasMessages ? (
+            <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-6 py-16 text-center">
+              <div className="max-w-md">
+                <p className="text-sm font-medium text-slate-900">正在读取历史消息</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  会先从 message-gateway 拉取当前会话历史，再叠加 websocket 实时消息。
+                </p>
+              </div>
+            </div>
+          ) : hasMessages ? (
             <div className="space-y-3">
-              {messages.map((message) => {
+              {combinedMessages.map((message) => {
                 const isCustomer = message.senderRole === 'customer';
+                const readStatus = formatMessageReadStatus(message);
                 return (
                   <article
                     key={message.id}
@@ -354,10 +837,27 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
                         <span>{formatTime(message.createdAt)}</span>
                       </div>
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{message.text}</p>
+                      <div
+                        className={[
+                          'mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium tracking-wide',
+                          isCustomer ? 'bg-white/15 text-white' : 'bg-slate-200 text-slate-700',
+                        ].join(' ')}
+                      >
+                        {readStatus}
+                      </div>
                     </div>
                   </article>
                 );
               })}
+            </div>
+          ) : historyError ? (
+            <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-amber-200 bg-amber-50 px-6 py-16 text-center">
+              <div className="max-w-md">
+                <p className="text-sm font-medium text-amber-900">暂无历史消息</p>
+                <p className="mt-2 text-sm leading-6 text-amber-800">
+                  历史接口异常时，实时 websocket 消息仍会继续展示。请稍后重试刷新历史。
+                </p>
+              </div>
             </div>
           ) : (
             <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-6 py-16 text-center">
@@ -380,8 +880,14 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
               ref={textareaRef}
               id="customer-message"
               className="min-h-[108px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 disabled:bg-slate-100"
-              disabled={!conversation}
-              placeholder={conversation ? '输入消息，回车发送，Shift+Enter 换行' : '先创建会话再输入消息'}
+              disabled={inputDisabled}
+              placeholder={
+                !conversation
+                  ? '先创建会话再输入消息'
+                  : effectiveConversationStatus === 'ended'
+                    ? '会话已结束，可提交满意度或前往留言'
+                    : '输入消息，回车发送，Shift+Enter 换行'
+              }
               value={draftMessage}
               onChange={(event) => setDraftMessage(event.target.value)}
               onKeyDown={handleKeyDown}
@@ -389,14 +895,14 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
 
             <div className="mt-3 flex items-center justify-between gap-3">
               <p className="text-xs leading-5 text-slate-500">
-                输入框已接入真实发送链路，当前仅处理文本消息。
+                输入框已接入真实发送链路，发送后会调用 AI 决策并在当前会话中给出建议。
               </p>
               <button
                 className="inline-flex items-center justify-center rounded-2xl bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={!conversation || !draftMessage.trim()}
+                disabled={inputDisabled || !draftMessage.trim() || aiAdvice.status === 'loading'}
                 type="submit"
               >
-                发送消息
+                {aiAdvice.status === 'loading' ? '处理中...' : '发送消息'}
               </button>
             </div>
           </div>
@@ -404,4 +910,16 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
       </section>
     </div>
   );
+}
+
+function buildHandoffMessage(decision: AiDecisionRead): string {
+  if (decision.clarification?.trim()) {
+    return `${decision.clarification.trim()} 建议转人工继续处理当前问题。`;
+  }
+
+  if (decision.decision === 'reject') {
+    return '暂时无法给出可靠答案，建议转人工继续处理当前问题。';
+  }
+
+  return '建议转人工继续处理当前问题。';
 }

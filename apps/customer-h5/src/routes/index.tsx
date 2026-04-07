@@ -14,6 +14,11 @@ const entryPoints = [
     title: '进入嵌入模式',
     description: '更紧凑的聊天壳，适合宿主页面、WebView 或 iframe。',
   },
+  {
+    to: '/leave-message',
+    title: '进入留言页',
+    description: '适合人工不在线时留下联系信息和问题内容。',
+  },
 ] as const;
 
 export function HomePage() {
@@ -43,10 +48,15 @@ export function HomePage() {
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              {entryPoints.map((item) => (
+              {entryPoints.map((item, index) => (
                 <Link
                   key={item.to}
-                  className="inline-flex rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+                  className={[
+                    'inline-flex rounded-2xl px-4 py-3 text-sm font-medium transition',
+                    index === 0
+                      ? 'bg-slate-950 text-white hover:bg-slate-800'
+                      : 'border border-slate-200 bg-white text-slate-700 hover:border-cyan-200 hover:bg-cyan-50',
+                  ].join(' ')}
                   to={item.to}
                 >
                   {item.title}

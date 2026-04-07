@@ -1,0 +1,29 @@
+Metadata-Version: 2.4
+Name: ai-service
+Version: 0.1.0
+Summary: AI service for west-ai-agent.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<1.0,>=0.115
+Requires-Dist: httpx<1.0,>=0.27
+Requires-Dist: uvicorn[standard]<1.0,>=0.30
+Provides-Extra: dev
+Requires-Dist: pytest<9.0,>=8.0; extra == "dev"
+
+# ai-service
+
+Minimal FastAPI service scaffold.
+
+## Run
+
+```bash
+uv sync --extra dev
+uv run ai-service
+```
+
+## Test
+
+```bash
+uv run pytest
+```
+

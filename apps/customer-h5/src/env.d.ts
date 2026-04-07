@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_PLATFORM_API_BASE_URL?: string;
   readonly VITE_MESSAGE_GATEWAY_WS_URL?: string;
+  readonly VITE_AI_SERVICE_BASE_URL?: string;
 }
 
 interface ImportMeta {

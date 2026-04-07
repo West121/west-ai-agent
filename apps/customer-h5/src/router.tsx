@@ -3,6 +3,7 @@ import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/re
 import { ModeShell } from '@/components/mode-shell';
 import { EmbeddedPage } from '@/routes/embedded';
 import { HomePage } from '@/routes/index';
+import { LeaveMessagePage } from '@/routes/leave-message';
 import { StandalonePage } from '@/routes/standalone';
 
 const rootRoute = createRootRoute({
@@ -41,7 +42,13 @@ const embeddedRoute = createRoute({
   },
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, standaloneRoute, embeddedRoute]);
+const leaveMessageRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'leave-message',
+  component: LeaveMessagePage,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, standaloneRoute, embeddedRoute, leaveMessageRoute]);
 
 export const router = createRouter({
   routeTree,

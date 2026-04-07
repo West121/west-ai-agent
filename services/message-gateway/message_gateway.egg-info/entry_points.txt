@@ -1,0 +1,2 @@
+[console_scripts]
+message-gateway = app.main:main

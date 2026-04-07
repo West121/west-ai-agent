@@ -46,6 +46,12 @@ export function ModeShell({ children, mode }: ModeShellProps) {
               <Link className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white" to="/">
                 Home
               </Link>
+              <Link
+                className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+                to="/leave-message"
+              >
+                留言页
+              </Link>
               <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                 {isEmbedded ? 'Embedded' : 'Standalone'}
               </span>

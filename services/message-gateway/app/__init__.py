@@ -1,0 +1,2 @@
+"""Message gateway application package."""
+
