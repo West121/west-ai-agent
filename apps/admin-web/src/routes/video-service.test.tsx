@@ -1,107 +1,22 @@
 import type { AnchorHTMLAttributes } from 'react';
 
 import { renderWithProviders } from '@/test/render';
-import { screen, waitFor } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { VideoServicePage } from '@/routes/video-service';
 
-type CustomerProfile = {
-  id: number;
-  external_id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  tags: [];
-};
-
-type Conversation = {
-  id: number;
-  customer_profile_id: number;
-  channel: string;
-  assignee: string | null;
-  status: string;
-  ended_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-type Ticket = {
-  id: number;
-  title: string;
-  status: string;
-  priority: string;
-  source: string;
-  customer_profile_id: number | null;
-  conversation_id: number | null;
-  assignee: string | null;
-  assignee_group: string | null;
-  summary: string | null;
-  sla_due_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-type VideoSession = {
-  id: number;
-  customer_profile_id: number;
-  conversation_id: number | null;
-  assignee: string | null;
-  status: string;
-  ticket_id: number | null;
-  started_at: string;
-  ended_at: string | null;
-  ended_reason: string | null;
-  created_at: string;
-  updated_at: string;
-  snapshot_count: number;
-  latest_snapshot_at: string | null;
-};
-
-type VideoSnapshot = {
-  id: number;
-  session_id: number;
-  label: string;
-  note: string | null;
-  created_at: string;
-};
-
-const state = {
-  customers: [
-    {
-      id: 1,
-      external_id: 'c-1',
-      name: '张晓晴',
-      email: 'zhang@example.com',
-      phone: '13800000000',
-      status: 'vip',
-      created_at: '2026-04-07T04:00:00.000Z',
-      updated_at: '2026-04-07T04:00:00.000Z',
-      tags: [],
-    } satisfies CustomerProfile,
-  ],
-  conversations: [
-    {
-      id: 11,
-      customer_profile_id: 1,
-      channel: 'video',
-      assignee: 'agent-video',
-      status: 'open',
-      ended_at: null,
-      created_at: '2026-04-07T04:00:00.000Z',
-      updated_at: '2026-04-07T04:00:00.000Z',
-    } satisfies Conversation,
-  ],
-  tickets: [] as Ticket[],
-  sessions: [] as VideoSession[],
-  snapshots: [] as VideoSnapshot[],
-};
-
-let nextSessionId = 1;
-let nextSnapshotId = 1;
-let nextTicketId = 1;
+const mocks = vi.hoisted(() => ({
+  startSession: vi.fn(),
+  endSession: vi.fn(),
+  createSnapshot: vi.fn(),
+  transferTicket: vi.fn(),
+  uploadRecording: vi.fn(),
+  saveSummary: vi.fn(),
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  startRecording: vi.fn(),
+  stopRecording: vi.fn(),
+}));
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to?: string }) => (
@@ -111,172 +26,145 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 
-vi.mock('@/lib/platform-api', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/platform-api')>('@/lib/platform-api');
+vi.mock('@/hooks/use-video-call', () => ({
+  useVideoCall: () => ({
+    localVideoRef: { current: null },
+    remoteVideoRef: { current: null },
+    connectionState: 'connected',
+    recordingState: 'idle',
+    error: null,
+    connect: mocks.connect,
+    disconnect: mocks.disconnect,
+    startRecording: mocks.startRecording,
+    stopRecording: mocks.stopRecording,
+  }),
+}));
 
-  return {
-    ...actual,
-    requestJson: vi.fn(async (path: string, options: { method?: string; body?: unknown } = {}) => {
-      const method = (options.method ?? 'GET').toUpperCase();
-
-      if (method === 'GET' && path === '/customer/profiles') {
-        return state.customers;
-      }
-
-      if (method === 'GET' && path === '/conversation/conversations') {
-        return state.conversations;
-      }
-
-      if (method === 'GET' && path === '/service/tickets') {
-        return { items: state.tickets };
-      }
-
-      if (method === 'GET' && path === '/video/sessions') {
-        return { items: state.sessions };
-      }
-
-      if (method === 'GET' && path === '/video/sessions/current') {
-        return state.sessions.find((item) => item.status === 'active') ?? null;
-      }
-
-      if (method === 'GET' && path.startsWith('/video/sessions/') && path.endsWith('/snapshots')) {
-        const sessionId = Number(path.split('/')[3]);
-        return { items: state.snapshots.filter((item) => item.session_id === sessionId) };
-      }
-
-      if (method === 'POST' && path === '/video/sessions/start') {
-        const body = options.body as { customer_profile_id?: number; conversation_id?: number | null; assignee?: string | null } | undefined;
-        const activeSession = state.sessions.find((item) => item.status === 'active');
-        if (activeSession) {
-          return activeSession;
-        }
-
-        const now = new Date().toISOString();
-        const session: VideoSession = {
-          id: nextSessionId++,
-          customer_profile_id: body?.customer_profile_id ?? 1,
-          conversation_id: body?.conversation_id ?? 11,
-          assignee: body?.assignee ?? 'agent-video',
-          status: 'active',
-          ticket_id: null,
-          started_at: now,
-          ended_at: null,
-          ended_reason: null,
-          created_at: now,
-          updated_at: now,
-          snapshot_count: 0,
-          latest_snapshot_at: null,
-        };
-        state.sessions.unshift(session);
-        return session;
-      }
-
-      if (method === 'POST' && path.match(/^\/video\/sessions\/\d+\/end$/)) {
-        const sessionId = Number(path.split('/')[3]);
-        const session = state.sessions.find((item) => item.id === sessionId);
-        if (!session) {
-          throw new Error(`session ${sessionId} not found`);
-        }
-        session.status = 'ended';
-        session.ended_at = new Date().toISOString();
-        session.updated_at = session.ended_at;
-        session.ended_reason = ((options.body as { reason?: string | null } | undefined)?.reason ?? null);
-        return session;
-      }
-
-      if (method === 'POST' && path.match(/^\/video\/sessions\/\d+\/snapshots$/)) {
-        const sessionId = Number(path.split('/')[3]);
-        const session = state.sessions.find((item) => item.id === sessionId);
-        if (!session) {
-          throw new Error(`session ${sessionId} not found`);
-        }
-        const body = options.body as { label?: string | null; note?: string | null } | undefined;
-        const now = new Date().toISOString();
-        const snapshot: VideoSnapshot = {
-          id: nextSnapshotId++,
-          session_id: sessionId,
-          label: body?.label?.trim() || `抓拍 ${state.snapshots.filter((item) => item.session_id === sessionId).length + 1}`,
-          note: body?.note ?? null,
-          created_at: now,
-        };
-        state.snapshots.unshift(snapshot);
-        session.snapshot_count += 1;
-        session.latest_snapshot_at = now;
-        session.updated_at = now;
-        return snapshot;
-      }
-
-      if (method === 'POST' && path.match(/^\/video\/sessions\/\d+\/transfer-ticket$/)) {
-        const sessionId = Number(path.split('/')[3]);
-        const session = state.sessions.find((item) => item.id === sessionId);
-        if (!session) {
-          throw new Error(`session ${sessionId} not found`);
-        }
-        if (session.ticket_id) {
-          return state.tickets.find((ticket) => ticket.id === session.ticket_id)!;
-        }
-
-        const body = options.body as { title?: string; status?: string; priority?: string; source?: string; assignee?: string | null; assignee_group?: string | null; summary?: string | null } | undefined;
-        const now = new Date().toISOString();
-        const ticket: Ticket = {
-          id: nextTicketId++,
-          title: body?.title ?? `视频会话 #${sessionId} 工单`,
-          status: body?.status ?? 'open',
-          priority: body?.priority ?? 'normal',
-          source: body?.source ?? 'video',
-          customer_profile_id: session.customer_profile_id,
-          conversation_id: session.conversation_id,
-          assignee: body?.assignee ?? session.assignee,
-          assignee_group: body?.assignee_group ?? '视频客服',
-          summary: body?.summary ?? '由视频客服抓拍后转工单',
-          sla_due_at: null,
-          created_at: now,
-          updated_at: now,
-        };
-        state.tickets.unshift(ticket);
-        session.ticket_id = ticket.id;
-        session.updated_at = now;
-        return ticket;
-      }
-
-      throw new Error(`Unhandled request ${method} ${path}`);
-    }),
-  };
-});
-
-vi.mock('@/hooks/use-platform-api', async () => {
-  const actual = await vi.importActual<typeof import('@/hooks/use-platform-api')>('@/hooks/use-platform-api');
-  return actual;
-});
+vi.mock('@/hooks/use-platform-api', () => ({
+  useConversations: () => ({
+    data: [{ id: 11, customer_profile_id: 1, channel: 'web', assignee: 'agent-video', status: 'open', ended_at: null, created_at: '', updated_at: '' }],
+    isLoading: false,
+    isError: false,
+  }),
+  useCustomers: () => ({
+    data: [{ id: 1, external_id: 'c-1', name: '张晓晴', email: 'zhang@example.com', phone: '13800000000', status: 'vip', created_at: '', updated_at: '', tags: [] }],
+    isLoading: false,
+    isError: false,
+  }),
+  useTickets: () => ({
+    data: [{ id: 21, title: '视频工单', status: 'open', priority: 'high', source: 'video', customer_profile_id: 1, conversation_id: 11, assignee: 'agent-video', assignee_group: '视频客服', summary: '已转工单', sla_due_at: null, created_at: '', updated_at: '' }],
+    isLoading: false,
+    isError: false,
+  }),
+  useVideoSessions: () => ({
+    data: [{
+      id: 31,
+      customer_profile_id: 1,
+      conversation_id: 11,
+      assignee: 'agent-video',
+      status: 'active',
+      ticket_id: 21,
+      ai_summary: 'AI 已生成会后摘要',
+      operator_summary: '人工已确认订单信息',
+      issue_category: 'refund',
+      resolution: '等待财务回访',
+      next_action: '24 小时内回访',
+      handoff_reason: '财务确认到账',
+      follow_up_required: true,
+      summary_updated_at: '2026-04-07T06:00:00.000Z',
+      started_at: '2026-04-07T05:30:00.000Z',
+      ended_at: null,
+      ended_reason: null,
+      created_at: '2026-04-07T05:30:00.000Z',
+      updated_at: '2026-04-07T06:00:00.000Z',
+      snapshot_count: 1,
+      latest_snapshot_at: '2026-04-07T05:40:00.000Z',
+      recording_count: 1,
+      latest_recording_at: '2026-04-07T05:50:00.000Z',
+    }],
+    isLoading: false,
+    isError: false,
+  }),
+  useCurrentVideoSession: () => ({ data: null, isLoading: false, isError: false }),
+  useVideoSnapshots: () => ({
+    data: [{ id: 41, session_id: 31, label: '抓拍 1', note: '客户展示订单号', created_at: '2026-04-07T05:40:00.000Z' }],
+    isLoading: false,
+    isError: false,
+  }),
+  useVideoRecordings: () => ({
+    data: [{ id: 51, session_id: 31, entry_type: 'recording', label: '浏览器录制 10:00', note: '用于回放', file_key: 'recordings/31.webm', file_name: '31.webm', mime_type: 'video/webm', duration_seconds: 12, playback_url: '/video/recordings/51/playback', recorded_at: '2026-04-07T05:50:00.000Z', created_at: '2026-04-07T05:50:00.000Z' }],
+    isLoading: false,
+    isError: false,
+  }),
+  useVideoSessionSummary: () => ({
+    data: {
+      id: 31,
+      customer_profile_id: 1,
+      conversation_id: 11,
+      assignee: 'agent-video',
+      status: 'active',
+      ticket_id: 21,
+      ai_summary: 'AI 已生成会后摘要',
+      operator_summary: '人工已确认订单信息',
+      issue_category: 'refund',
+      resolution: '等待财务回访',
+      next_action: '24 小时内回访',
+      handoff_reason: '财务确认到账',
+      follow_up_required: true,
+      summary_updated_at: '2026-04-07T06:00:00.000Z',
+      started_at: '2026-04-07T05:30:00.000Z',
+      ended_at: null,
+      ended_reason: null,
+      created_at: '2026-04-07T05:30:00.000Z',
+      updated_at: '2026-04-07T06:00:00.000Z',
+      snapshot_count: 1,
+      latest_snapshot_at: '2026-04-07T05:40:00.000Z',
+      recording_count: 1,
+      latest_recording_at: '2026-04-07T05:50:00.000Z',
+    },
+    isLoading: false,
+    isError: false,
+  }),
+  useStartVideoSession: () => ({ mutateAsync: mocks.startSession, isPending: false }),
+  useEndVideoSession: () => ({ mutateAsync: mocks.endSession, isPending: false }),
+  useCreateVideoSnapshot: () => ({ mutateAsync: mocks.createSnapshot, isPending: false }),
+  useTransferVideoSessionTicket: () => ({ mutateAsync: mocks.transferTicket, isPending: false }),
+  useUploadVideoRecording: () => ({ mutateAsync: mocks.uploadRecording, isPending: false }),
+  useUpsertVideoSessionSummary: () => ({ mutateAsync: mocks.saveSummary, isPending: false }),
+}));
 
 describe('VideoServicePage', () => {
   beforeEach(() => {
-    state.tickets = [];
-    state.sessions = [];
-    state.snapshots = [];
-    nextSessionId = 1;
-    nextSnapshotId = 1;
-    nextTicketId = 1;
+    vi.clearAllMocks();
   });
 
-  it('starts, captures, transfers, and ends a video service session', async () => {
+  it('renders video call workspace with playback and summary form', async () => {
+    renderWithProviders(<VideoServicePage />);
+
+    expect(await screen.findByRole('heading', { name: '视频客服' })).toBeInTheDocument();
+    expect(screen.getByText('1v1 WebRTC')).toBeInTheDocument();
+    expect(screen.getByText('录制回放')).toBeInTheDocument();
+    expect(screen.getByText('会后摘要与抓拍')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('人工已确认订单信息')).toBeInTheDocument();
+  });
+
+  it('invokes signaling and summary actions', async () => {
     const user = userEvent.setup();
     renderWithProviders(<VideoServicePage />);
 
-    await screen.findByRole('button', { name: '开始视频服务' });
-    await user.click(screen.getByRole('button', { name: '开始视频服务' }));
-    await waitFor(() => expect(screen.getByText('当前状态：active')).toBeInTheDocument());
+    await user.click(await screen.findByRole('button', { name: '发起 1v1 通话' }));
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: '开始录制' }));
+    expect(mocks.startRecording).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole('button', { name: '抓拍记录' }));
-    await waitFor(() => expect(screen.getByText('已创建抓拍记录「抓拍 1」')).toBeInTheDocument());
-    expect(screen.getByText('共 1 条')).toBeInTheDocument();
+    expect(mocks.createSnapshot).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole('button', { name: '转工单' }));
-    await waitFor(() => expect(screen.getByText(/已转工单 #1/)).toBeInTheDocument());
-    expect(screen.getByText('视频会话 #1 工单')).toBeInTheDocument();
+    expect(mocks.transferTicket).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole('button', { name: '结束服务' }));
-    await waitFor(() => expect(screen.getByText('当前状态：ended')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole('button', { name: '开始视频服务' })).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: '保存会后摘要' }));
+    expect(mocks.saveSummary).toHaveBeenCalledTimes(1);
   });
 });

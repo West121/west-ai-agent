@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 WorkflowAction = Literal["answer", "collect_slot", "handoff", "reject"]
+WorkflowMode = Literal["decision_pipeline", "langgraph"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +17,8 @@ class SupportWorkflowRequest:
 class SupportWorkflowResult:
     query: str
     normalized_query: str
+    workflow_mode: WorkflowMode
+    flow_category: str | None
     decision: str
     confidence: float
     extracted_slots: dict[str, str]
@@ -28,11 +31,14 @@ class SupportWorkflowResult:
     answer: str | None
     clarification: str | None
     summary: str
+    graph_trace: list[str]
 
     def to_dict(self) -> dict[str, object]:
         return {
             "query": self.query,
             "normalized_query": self.normalized_query,
+            "workflow_mode": self.workflow_mode,
+            "flow_category": self.flow_category,
             "decision": self.decision,
             "confidence": round(self.confidence, 3),
             "extracted_slots": self.extracted_slots,
@@ -45,4 +51,5 @@ class SupportWorkflowResult:
             "answer": self.answer,
             "clarification": self.clarification,
             "summary": self.summary,
+            "graph_trace": self.graph_trace,
         }

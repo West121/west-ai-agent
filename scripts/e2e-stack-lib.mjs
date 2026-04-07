@@ -17,6 +17,14 @@ function envInt(name, fallback) {
   return Number.isInteger(value) && value > 0 ? value : fallback;
 }
 
+function envBool(name, fallback = false) {
+  const value = process.env[name];
+  if (value == null || value === '') {
+    return fallback;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
 export function getStackConfig() {
   const postgresPort = envInt('E2E_POSTGRES_PORT', 25432);
   const redisPort = envInt('E2E_REDIS_PORT', 26379);
@@ -30,6 +38,7 @@ export function getStackConfig() {
   const adminWebPort = envInt('E2E_ADMIN_WEB_PORT', 48173);
   const customerH5Port = envInt('E2E_CUSTOMER_H5_PORT', 48174);
   const dataRoot = path.join(runtimeDir, 'data');
+  const skipOpenSearch = envBool('E2E_SKIP_OPENSEARCH', false);
 
   return {
     rootDir,
@@ -46,6 +55,7 @@ export function getStackConfig() {
     aiServicePort,
     adminWebPort,
     customerH5Port,
+    skipOpenSearch,
     urls: {
       platformApi: `http://127.0.0.1:${platformApiPort}`,
       messageGateway: `http://127.0.0.1:${messageGatewayPort}`,
@@ -66,7 +76,9 @@ function serviceDefinitions(config) {
     (process.env.QWEN_API_KEY ? 'https://dashscope.aliyuncs.com/compatible-mode/v1' : '');
   const postgresUrl =
     process.env.APP_DATABASE_URL ?? `postgresql+psycopg://postgres:postgres@127.0.0.1:${config.postgresPort}/platform`;
-  const opensearchUrl = process.env.AI_SERVICE_OPENSEARCH_URL ?? `http://127.0.0.1:${config.opensearchHttpPort}`;
+  const opensearchUrl = config.skipOpenSearch
+    ? ''
+    : process.env.AI_SERVICE_OPENSEARCH_URL ?? `http://127.0.0.1:${config.opensearchHttpPort}`;
   const opensearchIndex = process.env.AI_SERVICE_OPENSEARCH_INDEX ?? 'knowledge_chunks';
 
   return [
@@ -233,6 +245,7 @@ async function run(command, args, options = {}) {
 
 function spawnDetached(definition) {
   const logPath = path.join(logDir, `${definition.name}.log`);
+  void fs.writeFile(logPath, '');
   const child = spawn(definition.command, definition.args, {
     cwd: definition.cwd,
     env: { ...process.env, ...definition.env },
@@ -356,14 +369,10 @@ export async function startE2EStack() {
   const config = getStackConfig();
   await ensureRuntimeDir();
   await stopE2EStack({ keepCompose: false }).catch(() => {});
-  await run('docker', ['compose', '-f', composeFile, 'up', '-d'], {
+  await run('docker', ['compose', '-f', composeFile, 'up', '-d', '--wait'], {
     cwd: rootDir,
     env: composeEnv(config),
   });
-  await waitForTcpPort(config.postgresPort);
-  await waitForTcpPort(config.redisPort);
-  await waitForUrl(`http://127.0.0.1:${config.minioApiPort}/minio/health/live`);
-  await waitForUrl(`http://127.0.0.1:${config.opensearchHttpPort}`);
 
   const processes = [];
   for (const definition of serviceDefinitions(config)) {

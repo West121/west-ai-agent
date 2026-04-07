@@ -1,8 +1,10 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from time import sleep
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import OperationalError
 
 from app.api.router import api_router
 from app.core.config import get_settings
@@ -22,7 +24,19 @@ DEFAULT_JWT_SECRET = "dev-secret-for-platform-api-please-change"
 def ensure_schema() -> None:
     import app.models  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
+    last_error: Exception | None = None
+    for attempt in range(1, settings.app_database_startup_retries + 1):
+        try:
+            Base.metadata.create_all(bind=engine)
+            return
+        except OperationalError as error:
+            last_error = error
+            if attempt >= settings.app_database_startup_retries:
+                break
+            sleep(settings.app_database_startup_retry_delay_seconds)
+
+    if last_error is not None:
+        raise last_error
 
 
 def validate_runtime_settings() -> None:

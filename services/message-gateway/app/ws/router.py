@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.message_store import MessageRecord
@@ -12,6 +14,18 @@ from app.state import (
 )
 
 router = APIRouter()
+
+VIDEO_SIGNAL_EVENTS = {
+    "video.offer",
+    "video.answer",
+    "video.ice-candidate",
+    "video.recording.started",
+    "video.recording.stopped",
+}
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @router.websocket("/ws/{conversation_id}")
@@ -43,6 +57,18 @@ async def websocket_endpoint(
 
             if event_type == "ping":
                 await websocket.send_json({"type": "pong"})
+                continue
+
+            if event_type in VIDEO_SIGNAL_EVENTS:
+                targets = presence_service.sockets(conversation_id)
+                relay_payload = {
+                    **payload,
+                    "conversation_id": conversation_id,
+                    "sender_id": client_id,
+                    "sender_role": role,
+                    "received_at": utcnow().isoformat(),
+                }
+                await delivery_service.broadcast_except(relay_payload, targets, client_id)
                 continue
 
             if event_type != "message.send":

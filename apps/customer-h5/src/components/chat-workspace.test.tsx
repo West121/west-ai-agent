@@ -113,15 +113,11 @@ describe('ChatWorkspace', () => {
   it('shows AI answer advice after sending a customer message', async () => {
     const requestAiDecision = vi.spyOn(customerApi, 'requestAiDecision').mockResolvedValue({
       query: '退款多久到账？',
-      decision: 'answer',
-      answer: '一般情况下原路退款会在 1 到 3 个工作日到账。',
-      clarification: null,
-      confidence: 0.92,
-      retrieval_summary: {
-        top_score: 0.92,
-        matched_count: 1,
-        matched_documents: [],
-      },
+      decision: 'clarify',
+      answer: null,
+      clarification: '请补充订单号和手机号。',
+      workflow_mode: 'langgraph',
+      confidence: 0.78,
     });
 
     render(<ChatWorkspace mode="standalone" />, { wrapper: createWrapper() });
@@ -135,12 +131,13 @@ describe('ChatWorkspace', () => {
     await waitFor(() => {
       expect(requestAiDecision).toHaveBeenCalledWith({
         query: '退款多久到账？',
-        endpoint: 'answer',
+        endpoint: 'triage',
       });
     });
 
     expect(await screen.findByText('AI 建议')).toBeInTheDocument();
-    expect(await screen.findByText(/原路退款会在 1 到 3 个工作日到账/)).toBeInTheDocument();
+    expect(await screen.findByText(/流程 langgraph/)).toBeInTheDocument();
+    expect(await screen.findByText(/AI 需要更多信息/)).toBeInTheDocument();
   });
 
   it('shows handoff guidance when AI confidence is low', async () => {
@@ -169,5 +166,33 @@ describe('ChatWorkspace', () => {
     expect(notices.length).toBeGreaterThan(0);
     expect(screen.getByText('AI 建议')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '留言' })).toBeInTheDocument();
+  });
+
+  it('routes refund-like issues to langgraph triage flow', async () => {
+    const requestAiDecision = vi.spyOn(customerApi, 'requestAiDecision').mockResolvedValue({
+      query: '退款不到账，订单号 123456 手机号 13800000000',
+      decision: 'handoff',
+      answer: null,
+      clarification: null,
+      workflow_mode: 'langgraph',
+      confidence: 0.91,
+    });
+
+    render(<ChatWorkspace mode="standalone" />, { wrapper: createWrapper() });
+
+    await userEvent.click(screen.getByRole('button', { name: '创建并连接会话' }));
+
+    const input = await screen.findByLabelText('message');
+    await userEvent.type(input, '退款不到账，订单号 123456 手机号 13800000000');
+    await userEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    await waitFor(() => {
+      expect(requestAiDecision).toHaveBeenCalledWith({
+        query: '退款不到账，订单号 123456 手机号 13800000000',
+        endpoint: 'triage',
+      });
+    });
+
+    expect(await screen.findByText(/流程 langgraph/)).toBeInTheDocument();
   });
 });

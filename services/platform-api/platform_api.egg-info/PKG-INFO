@@ -5,6 +5,8 @@ Summary: Platform API service for west-ai-agent.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 Requires-Dist: fastapi<1.0,>=0.115
+Requires-Dist: minio<8.0,>=7.2
+Requires-Dist: python-multipart<1.0,>=0.0.9
 Requires-Dist: psycopg[binary]<4.0,>=3.2
 Requires-Dist: pydantic-settings<3.0,>=2.6
 Requires-Dist: pyjwt<3.0,>=2.10

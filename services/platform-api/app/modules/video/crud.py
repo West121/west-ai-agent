@@ -15,8 +15,11 @@ from app.modules.video.schemas import (
     VideoSessionEnd,
     VideoSessionRead,
     VideoSessionStart,
+    VideoSessionSummaryUpsert,
     VideoSessionTransferTicket,
     VideoSnapshotCreate,
+    VideoRecordingCreate,
+    VideoRecordingRead,
 )
 
 
@@ -47,7 +50,10 @@ def _load_current_video_session(db: Session) -> VideoSession | None:
 
 
 def _session_read(session: VideoSession) -> VideoSessionRead:
-    latest_snapshot_at = max((snapshot.created_at for snapshot in session.snapshots), default=None)
+    snapshots = [snapshot for snapshot in session.snapshots if snapshot.entry_type == "snapshot"]
+    recordings = [snapshot for snapshot in session.snapshots if snapshot.entry_type == "recording"]
+    latest_snapshot_at = max((snapshot.created_at for snapshot in snapshots), default=None)
+    latest_recording_at = max((snapshot.recorded_at or snapshot.created_at for snapshot in recordings), default=None)
     return VideoSessionRead(
         id=session.id,
         customer_profile_id=session.customer_profile_id,
@@ -55,13 +61,40 @@ def _session_read(session: VideoSession) -> VideoSessionRead:
         assignee=session.assignee,
         status=session.status,
         ticket_id=session.ticket_id,
+        ai_summary=session.ai_summary,
+        operator_summary=session.operator_summary,
+        issue_category=session.issue_category,
+        resolution=session.resolution,
+        next_action=session.next_action,
+        handoff_reason=session.handoff_reason,
+        follow_up_required=session.follow_up_required,
+        summary_updated_at=session.summary_updated_at,
         started_at=session.started_at,
         ended_at=session.ended_at,
         ended_reason=session.ended_reason,
         created_at=session.created_at,
         updated_at=session.updated_at,
-        snapshot_count=len(session.snapshots),
+        snapshot_count=len(snapshots),
         latest_snapshot_at=latest_snapshot_at,
+        recording_count=len(recordings),
+        latest_recording_at=latest_recording_at,
+    )
+
+
+def _recording_read(recording: VideoSnapshot) -> VideoRecordingRead:
+    return VideoRecordingRead(
+        id=recording.id,
+        session_id=recording.session_id,
+        entry_type=recording.entry_type,
+        label=recording.label,
+        note=recording.note,
+        file_key=recording.file_key,
+        file_name=recording.file_name,
+        mime_type=recording.mime_type,
+        duration_seconds=recording.duration_seconds,
+        playback_url=recording.playback_url or f"/video/recordings/{recording.id}/playback",
+        recorded_at=recording.recorded_at or recording.created_at,
+        created_at=recording.created_at,
     )
 
 
@@ -83,6 +116,10 @@ def list_video_sessions(db: Session) -> list[VideoSession]:
 
 def get_current_video_session(db: Session) -> VideoSession | None:
     return _load_current_video_session(db)
+
+
+def get_video_session(db: Session, session_id: int) -> VideoSession:
+    return _load_video_session(db, session_id)
 
 
 def start_video_session(db: Session, data: VideoSessionStart) -> VideoSession:
@@ -137,10 +174,33 @@ def list_video_snapshots(db: Session, session_id: int) -> list[VideoSnapshot]:
     _load_video_session(db, session_id)
     stmt = (
         select(VideoSnapshot)
+        .where(VideoSnapshot.entry_type == "snapshot")
         .where(VideoSnapshot.session_id == session_id)
         .order_by(VideoSnapshot.created_at.desc(), VideoSnapshot.id.desc())
     )
     return list(db.scalars(stmt).all())
+
+
+def list_video_recordings(db: Session, session_id: int) -> list[VideoSnapshot]:
+    _load_video_session(db, session_id)
+    stmt = (
+        select(VideoSnapshot)
+        .where(VideoSnapshot.entry_type == "recording")
+        .where(VideoSnapshot.session_id == session_id)
+        .order_by(VideoSnapshot.created_at.desc(), VideoSnapshot.id.desc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def get_video_recording(db: Session, recording_id: int) -> VideoSnapshot:
+    stmt = select(VideoSnapshot).where(
+        VideoSnapshot.id == recording_id,
+        VideoSnapshot.entry_type == "recording",
+    )
+    recording = db.scalars(stmt).first()
+    if recording is None:
+        raise _not_found("video recording", recording_id)
+    return recording
 
 
 def create_video_snapshot(db: Session, session_id: int, data: VideoSnapshotCreate) -> VideoSnapshot:
@@ -148,9 +208,10 @@ def create_video_snapshot(db: Session, session_id: int, data: VideoSnapshotCreat
     if session.status == "ended":
         raise HTTPException(status_code=409, detail="video session is already ended")
 
-    snapshot_count = len(session.snapshots)
+    snapshot_count = sum(1 for snapshot in session.snapshots if snapshot.entry_type == "snapshot")
     snapshot = VideoSnapshot(
         session_id=session_id,
+        entry_type="snapshot",
         label=data.label.strip() if data.label and data.label.strip() else f"抓拍 {snapshot_count + 1}",
         note=data.note.strip() if data.note and data.note.strip() else None,
     )
@@ -160,6 +221,60 @@ def create_video_snapshot(db: Session, session_id: int, data: VideoSnapshotCreat
     db.refresh(session)
     db.refresh(session, attribute_names=["snapshots"])
     return snapshot
+
+
+def create_video_recording(db: Session, session_id: int, data: VideoRecordingCreate) -> VideoSnapshot:
+    session = _load_video_session(db, session_id)
+    if session.status == "ended":
+        raise HTTPException(status_code=409, detail="video session is already ended")
+
+    recording_count = sum(1 for snapshot in session.snapshots if snapshot.entry_type == "recording")
+    recording = VideoSnapshot(
+        session_id=session_id,
+        entry_type="recording",
+        label=data.label.strip() if data.label and data.label.strip() else f"录制 {recording_count + 1}",
+        note=data.note.strip() if data.note and data.note.strip() else None,
+        file_key=data.file_key.strip() if data.file_key and data.file_key.strip() else None,
+        file_name=data.file_name.strip() if data.file_name and data.file_name.strip() else None,
+        mime_type=data.mime_type.strip() if data.mime_type and data.mime_type.strip() else None,
+        duration_seconds=data.duration_seconds,
+        playback_url=data.playback_url.strip() if data.playback_url and data.playback_url.strip() else None,
+        recorded_at=utcnow(),
+    )
+    db.add(recording)
+    db.flush()
+    if recording.playback_url is None:
+        recording.playback_url = f"/video/recordings/{recording.id}/playback"
+    db.commit()
+    db.refresh(recording)
+    db.refresh(session)
+    db.refresh(session, attribute_names=["snapshots"])
+    return recording
+
+
+def update_video_session_summary(db: Session, session_id: int, data: VideoSessionSummaryUpsert) -> VideoSession:
+    session = _load_video_session(db, session_id)
+    payload = data.model_dump(exclude_unset=True)
+    if "ai_summary" in payload and payload["ai_summary"] is not None:
+        session.ai_summary = payload["ai_summary"].strip() or session.ai_summary
+    if "operator_summary" in payload:
+        session.operator_summary = payload["operator_summary"].strip() if payload["operator_summary"] else None
+    if "issue_category" in payload:
+        session.issue_category = payload["issue_category"].strip() if payload["issue_category"] else None
+    if "resolution" in payload:
+        session.resolution = payload["resolution"].strip() if payload["resolution"] else None
+    if "next_action" in payload:
+        session.next_action = payload["next_action"].strip() if payload["next_action"] else None
+    if "handoff_reason" in payload:
+        session.handoff_reason = payload["handoff_reason"].strip() if payload["handoff_reason"] else None
+    if "follow_up_required" in payload:
+        session.follow_up_required = bool(payload["follow_up_required"])
+    session.summary_updated_at = utcnow()
+    session.updated_at = utcnow()
+    db.commit()
+    db.refresh(session)
+    db.refresh(session, attribute_names=["snapshots"])
+    return session
 
 
 def transfer_video_session_ticket(db: Session, session_id: int, data: VideoSessionTransferTicket):

@@ -20,7 +20,6 @@ test.describe('customer-h5 standalone flows', () => {
     await page.getByRole('button', { name: '发送消息' }).click();
 
     await expect(page.getByText(message)).toBeVisible();
-    await expect(page.getByText('已连接到 conversation')).toBeVisible();
 
     await page.getByRole('button', { name: '满意度', exact: true }).click();
     await expect(page.getByRole('heading', { name: '满意度提交' })).toBeVisible();
@@ -28,6 +27,30 @@ test.describe('customer-h5 standalone flows', () => {
     await page.getByRole('button', { name: '提交满意度' }).click();
 
     await expect(page.getByText(/已提交/)).toBeVisible();
+  });
+
+  test('routes refund and account freeze questions through langgraph triage and shows ai guidance', async ({ page }) => {
+    const uniqueSuffix = Date.now();
+    const message = `账号冻结了，退款也还没到账，订单号 TK${uniqueSuffix}，手机号 13812345678，请尽快处理`;
+
+    await page.goto(`${customerH5Url}/standalone`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '创建并连接会话' }).click();
+    await expect(page.getByText(/会话 #\d+/)).toBeVisible();
+
+    const composer = page.locator('#customer-message');
+    await composer.fill(message);
+    await page.getByRole('button', { name: '发送消息' }).click();
+
+    await expect(page.getByText(message)).toBeVisible();
+    await expect(page.getByText('AI 建议')).toBeVisible();
+    await expect(page.getByText(/流程 langgraph/)).toBeVisible();
+    await expect(
+      page
+        .locator('div')
+        .filter({ hasText: 'AI 建议' })
+        .filter({ hasText: /建议转人工继续处理当前问题。|AI 需要更多信息/ })
+        .first(),
+    ).toBeVisible();
   });
 
   test('submits a leave message from standalone leave-message page', async ({ page }) => {

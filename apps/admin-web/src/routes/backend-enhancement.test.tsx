@@ -37,6 +37,54 @@ const mocks = vi.hoisted(() => ({
       },
     ],
     lastRefreshedAt: '2026-04-07T03:20:00.000Z',
+    conversationAnalytics: {
+      window_days: 7,
+      trend: [
+        { date: '2026-04-06', created_count: 4, ended_count: 3, transferred_count: 1, average_duration_minutes: 12, summary_coverage_rate: 75, satisfaction_coverage_rate: 50 },
+        { date: '2026-04-07', created_count: 5, ended_count: 4, transferred_count: 2, average_duration_minutes: 18, summary_coverage_rate: 80, satisfaction_coverage_rate: 60 },
+      ],
+      status_distribution: [
+        { label: 'ended', value: 5 },
+        { label: 'open', value: 3 },
+      ],
+      channel_distribution: [
+        { label: 'web', value: 4 },
+        { label: 'app', value: 3 },
+      ],
+      duration: { count: 9, average_minutes: 15, max_minutes: 44 },
+      hit_rate: { summary_coverage_rate: 72, satisfaction_coverage_rate: 55, satisfaction_high_score_rate: 88 },
+      last_refreshed_at: '2026-04-07T03:20:00.000Z',
+    },
+    serviceAnalytics: {
+      window_days: 7,
+      trend: [
+        { date: '2026-04-06', ticket_count: 3, leave_message_count: 2, open_ticket_count: 2, pending_leave_message_count: 1, average_ticket_age_minutes: 90, average_leave_message_age_minutes: 45 },
+        { date: '2026-04-07', ticket_count: 4, leave_message_count: 1, open_ticket_count: 1, pending_leave_message_count: 1, average_ticket_age_minutes: 60, average_leave_message_age_minutes: 20 },
+      ],
+      distribution: {
+        ticket_status: [{ label: 'open', value: 2 }, { label: 'resolved', value: 1 }],
+        ticket_priority: [{ label: 'high', value: 1 }, { label: 'normal', value: 2 }],
+        ticket_source: [{ label: 'web', value: 2 }],
+        leave_message_status: [{ label: 'pending', value: 1 }],
+        leave_message_source: [{ label: 'h5', value: 1 }],
+      },
+      duration: {
+        ticket_count: 3,
+        leave_message_count: 1,
+        open_ticket_average_age_minutes: 72,
+        pending_leave_message_average_age_minutes: 24,
+        oldest_ticket_age_minutes: 120,
+        oldest_leave_message_age_minutes: 24,
+      },
+      hit_rate: { ticket_assignment_rate: 80, sla_compliance_rate: 66, leave_assignment_rate: 100 },
+      last_refreshed_at: '2026-04-07T03:20:00.000Z',
+    },
+    transferTrend: [
+      { label: '04-06', value: 1 },
+      { label: '04-07', value: 2 },
+    ],
+    ticketPriorityBreakdown: [{ label: 'high', value: 1 }],
+    leaveSourceBreakdown: [{ label: 'h5', value: 1 }],
   },
   historyItems: [
     {
@@ -157,11 +205,12 @@ describe('backend enhancement pages', () => {
     renderWithProviders(<AnalyticsPage />);
 
     expect(await screen.findByText('会话分析')).toBeInTheDocument();
+    expect(screen.getByText('近 7 天会话趋势')).toBeInTheDocument();
+    expect(screen.getByText('工单优先级分布')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '报表中心' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '质检评分' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '视频客服' })).toBeInTheDocument();
     expect(screen.getByText('运营摘要')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '服务运营台' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '会话历史' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '知识工坊' })).toBeInTheDocument();
-    expect(screen.getByText('最近高频渠道')).toBeInTheDocument();
   });
 
   it('renders history details and next-step panel', async () => {

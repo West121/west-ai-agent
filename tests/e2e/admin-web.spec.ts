@@ -1,12 +1,40 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { loginToAdmin, openAdminNav } from './helpers';
+import { loginToAdmin, mockVideoBrowserApis, openAdminNav } from './helpers';
 
 function sectionByHeading(page: Page, heading: string) {
   return page.getByRole('heading', { name: heading, exact: true }).locator('xpath=ancestor::section[1]');
 }
 
 test.describe('admin-web critical flows', () => {
+  test('renders analytics overview and links to report center', async ({ page }) => {
+    await loginToAdmin(page);
+    await openAdminNav(page, '分析', '会话分析');
+
+    await expect(page.getByRole('heading', { name: '会话分析' })).toBeVisible();
+    await expect(page.getByText('摘要覆盖率')).toBeVisible();
+    await expect(page.getByText('满意度覆盖率')).toBeVisible();
+    await expect(page.getByText('近 7 天会话趋势')).toBeVisible();
+    await expect(page.getByText('工单优先级分布')).toBeVisible();
+
+    await page.getByRole('main').getByRole('link', { name: '报表中心' }).click();
+    await expect(page.getByRole('heading', { name: '报表中心' })).toBeVisible();
+  });
+
+  test('renders report center metrics and opens video service', async ({ page }) => {
+    await loginToAdmin(page);
+    await openAdminNav(page, '报表中心', '报表中心');
+
+    await expect(page.getByRole('heading', { name: '报表中心' })).toBeVisible();
+    await expect(page.getByText('客户总量')).toBeVisible();
+    await expect(page.getByText('开放会话')).toBeVisible();
+    await expect(page.getByText('视频会话摘要覆盖')).toBeVisible();
+    await expect(page.getByText('工单状态分布')).toBeVisible();
+
+    await page.getByRole('link', { name: '查看视频客服' }).click();
+    await expect(page.getByRole('heading', { name: '视频客服' })).toBeVisible();
+  });
+
   test('creates and updates a ticket from service ops', async ({ page }) => {
     const uniqueSuffix = Date.now();
     const ticketTitle = `E2E 工单 ${uniqueSuffix}`;
@@ -76,5 +104,49 @@ test.describe('admin-web critical flows', () => {
 
     await expect(detailSection.getByText('published')).toBeVisible();
     await expect(detailSection.getByText('发布版 2')).toBeVisible();
+  });
+
+  test('runs the video service flow with browser media stubs', async ({ page }) => {
+    const uniqueSuffix = Date.now();
+    await mockVideoBrowserApis(page);
+
+    await loginToAdmin(page);
+    await openAdminNav(page, '视频客服', '视频客服');
+
+    const startButton = page.getByRole('button', { name: '开始视频服务' });
+    if (await startButton.isVisible()) {
+      await startButton.click();
+      await expect(page.getByText(/已开始视频会话 #\d+/)).toBeVisible();
+    } else {
+      await expect(page.getByRole('button', { name: '结束服务' })).toBeVisible();
+    }
+
+    await page.getByRole('button', { name: '发起 1v1 通话' }).click();
+    await page.waitForTimeout(750);
+    await page.getByRole('button', { name: '开始录制' }).click();
+    await expect(page.getByRole('button', { name: '停止录制' })).toBeEnabled({ timeout: 10000 });
+    await page.getByRole('button', { name: '停止录制' }).click();
+
+    await expect(page.getByText(/录制已上传，时长 \d+ 秒/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /浏览器录制/ }).first()).toBeVisible();
+
+    await page.getByRole('button', { name: '抓拍记录' }).click();
+    await expect(page.getByText(/已创建抓拍记录「抓拍 \d+」/)).toBeVisible();
+
+    await page.getByRole('button', { name: '转工单' }).click();
+    await expect(page.getByText(/已转工单 #\d+/)).toBeVisible();
+
+    const summarySection = page.getByRole('heading', { name: '会后摘要与抓拍' }).locator('xpath=ancestor::section[1]');
+    await summarySection.getByLabel('人工摘要').fill(`人工摘要 ${uniqueSuffix}`);
+    await summarySection.getByPlaceholder('问题分类').fill('退款');
+    await summarySection.getByPlaceholder('下一步动作').fill('24 小时内回访');
+    await summarySection.getByPlaceholder('处理结果').fill('等待财务回访');
+    await summarySection.getByPlaceholder('转人工/转工单原因').fill('财务确认到账');
+    await summarySection.getByLabel('需要后续跟进').check();
+    await summarySection.getByRole('button', { name: '保存会后摘要' }).click();
+
+    await expect(page.getByText('会后摘要已保存')).toBeVisible();
+    await expect(page.getByText('录制回放')).toBeVisible();
+    await expect(page.getByText('会话概览')).toBeVisible();
   });
 });

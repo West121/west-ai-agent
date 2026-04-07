@@ -75,4 +75,35 @@ describe('requestAiDecision', () => {
     );
     expect(result.decision).toBe('handoff');
   });
+
+  it('can call workflow triage endpoint for complex flows', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          decision: 'clarify',
+          answer: null,
+          clarification: '请补充订单号和手机号。',
+          workflow_mode: 'langgraph',
+          confidence: 0.78,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await requestAiDecision({ query: '退款但我还没收到，怎么办', endpoint: 'triage' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8020/workflow/triage',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ query: '退款但我还没收到，怎么办', context_slots: {} }),
+      }),
+    );
+    expect(result.workflow_mode).toBe('langgraph');
+  });
 });

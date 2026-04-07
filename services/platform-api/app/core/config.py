@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     app_default_admin_password: str = "admin123"
     app_bootstrap_default_admin: bool | None = None
     app_bootstrap_sample_data: bool | None = None
+    app_minio_endpoint: str | None = None
+    app_minio_access_key: str | None = None
+    app_minio_secret_key: str | None = None
+    app_minio_bucket: str = "knowledge-assets"
+    app_minio_secure: bool = False
+    app_media_root: str = "./platform_api_media"
+    app_database_startup_retries: int = 10
+    app_database_startup_retry_delay_seconds: float = 1.5
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

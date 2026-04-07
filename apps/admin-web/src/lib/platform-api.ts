@@ -303,6 +303,14 @@ export type VideoSession = {
   assignee: string | null;
   status: string;
   ticket_id: number | null;
+  ai_summary: string;
+  operator_summary: string | null;
+  issue_category: string | null;
+  resolution: string | null;
+  next_action: string | null;
+  handoff_reason: string | null;
+  follow_up_required: boolean;
+  summary_updated_at: string | null;
   started_at: string;
   ended_at: string | null;
   ended_reason: string | null;
@@ -310,6 +318,8 @@ export type VideoSession = {
   updated_at: string;
   snapshot_count: number;
   latest_snapshot_at: string | null;
+  recording_count: number;
+  latest_recording_at: string | null;
 };
 
 export type VideoSessionListResponse = {
@@ -339,8 +349,15 @@ export type VideoSessionTransferTicketInput = {
 export type VideoSnapshot = {
   id: number;
   session_id: number;
+  entry_type?: string;
   label: string;
   note: string | null;
+  file_key?: string | null;
+  file_name?: string | null;
+  mime_type?: string | null;
+  duration_seconds?: number | null;
+  playback_url?: string | null;
+  recorded_at?: string | null;
   created_at: string;
 };
 
@@ -351,6 +368,99 @@ export type VideoSnapshotListResponse = {
 export type VideoSnapshotCreateInput = {
   label?: string | null;
   note?: string | null;
+};
+
+export type VideoRecording = VideoSnapshot & {
+  entry_type: 'recording';
+  file_key: string | null;
+  file_name: string | null;
+  mime_type: string | null;
+  duration_seconds: number | null;
+  playback_url: string | null;
+  recorded_at: string | null;
+};
+
+export type VideoRecordingListResponse = {
+  items: VideoRecording[];
+};
+
+export type VideoSessionSummaryInput = {
+  ai_summary?: string | null;
+  operator_summary?: string | null;
+  issue_category?: string | null;
+  resolution?: string | null;
+  next_action?: string | null;
+  handoff_reason?: string | null;
+  follow_up_required?: boolean | null;
+};
+
+export type AnalyticsBreakdown = {
+  label: string;
+  value: number;
+};
+
+export type ConversationAnalyticsTrend = {
+  date: string;
+  created_count: number;
+  ended_count: number;
+  transferred_count: number;
+  average_duration_minutes: number | null;
+  summary_coverage_rate: number;
+  satisfaction_coverage_rate: number;
+};
+
+export type ConversationAnalyticsOverview = {
+  window_days: number;
+  trend: ConversationAnalyticsTrend[];
+  status_distribution: AnalyticsBreakdown[];
+  channel_distribution: AnalyticsBreakdown[];
+  duration: {
+    count: number;
+    average_minutes: number | null;
+    max_minutes: number | null;
+  };
+  hit_rate: {
+    summary_coverage_rate: number;
+    satisfaction_coverage_rate: number;
+    satisfaction_high_score_rate: number;
+  };
+  last_refreshed_at: string;
+};
+
+export type ServiceAnalyticsTrend = {
+  date: string;
+  ticket_count: number;
+  leave_message_count: number;
+  open_ticket_count: number;
+  pending_leave_message_count: number;
+  average_ticket_age_minutes: number | null;
+  average_leave_message_age_minutes: number | null;
+};
+
+export type ServiceAnalyticsOverview = {
+  window_days: number;
+  trend: ServiceAnalyticsTrend[];
+  distribution: {
+    ticket_status: AnalyticsBreakdown[];
+    ticket_priority: AnalyticsBreakdown[];
+    ticket_source: AnalyticsBreakdown[];
+    leave_message_status: AnalyticsBreakdown[];
+    leave_message_source: AnalyticsBreakdown[];
+  };
+  duration: {
+    ticket_count: number;
+    leave_message_count: number;
+    open_ticket_average_age_minutes: number | null;
+    pending_leave_message_average_age_minutes: number | null;
+    oldest_ticket_age_minutes: number | null;
+    oldest_leave_message_age_minutes: number | null;
+  };
+  hit_rate: {
+    ticket_assignment_rate: number;
+    sla_compliance_rate: number;
+    leave_assignment_rate: number;
+  };
+  last_refreshed_at: string;
 };
 
 function buildUrl(path: string): URL {
@@ -416,8 +526,12 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
   };
 
   if (options.body !== undefined) {
-    headers.set('Content-Type', 'application/json');
-    init.body = JSON.stringify(options.body);
+    if (options.body instanceof FormData) {
+      init.body = options.body;
+    } else {
+      headers.set('Content-Type', 'application/json');
+      init.body = JSON.stringify(options.body);
+    }
   }
 
   const response = await fetch(buildUrl(path), init);

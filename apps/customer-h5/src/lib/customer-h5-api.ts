@@ -98,7 +98,13 @@ export interface AiDecisionRead {
   answer: string | null;
   clarification: string | null;
   confidence: number;
-  retrieval_summary: {
+  workflow_mode?: 'decision_pipeline' | 'langgraph';
+  flow_category?: string | null;
+  next_action?: string | null;
+  next_prompt?: string | null;
+  summary?: string | null;
+  graph_trace?: string[];
+  retrieval_summary?: {
     top_score: number;
     matched_count: number;
     matched_documents: Array<{
@@ -113,7 +119,7 @@ export interface AiDecisionRead {
 
 export interface AiDecisionRequest {
   query: string;
-  endpoint?: 'answer' | 'decision';
+  endpoint?: 'answer' | 'decision' | 'triage';
 }
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
@@ -280,11 +286,16 @@ export async function requestAiDecision({
   query,
   endpoint = 'answer',
 }: AiDecisionRequest): Promise<AiDecisionRead> {
-  const path = endpoint === 'decision' ? '/decision' : '/chat/answer';
+  const path =
+    endpoint === 'decision'
+      ? '/decision'
+      : endpoint === 'triage'
+        ? '/workflow/triage'
+        : '/chat/answer';
 
   return aiRequestJson<AiDecisionRead>(path, {
     method: 'POST',
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(endpoint === 'triage' ? { query, context_slots: {} } : { query }),
   });
 }
 

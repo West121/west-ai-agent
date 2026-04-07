@@ -3,8 +3,10 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   type AuthUser,
   type CurrentPermissions,
+  type AnalyticsBreakdown,
   type ChannelApp,
   type ChannelAppListResponse,
+  type ConversationAnalyticsOverview,
   type ConversationHistoryItem,
   type ConversationHistoryListResponse,
   type ConversationSummaryResponse,
@@ -27,7 +29,11 @@ import {
   type PublishKnowledgeVersionInput,
   type SatisfactionCreateInput,
   type SatisfactionRecord,
+  type ServiceAnalyticsOverview,
+  type VideoRecording,
+  type VideoRecordingListResponse,
   type VideoSession,
+  type VideoSessionSummaryInput,
   type VideoSessionEndInput,
   type VideoSessionListResponse,
   type VideoSessionStartInput,
@@ -82,6 +88,11 @@ export type AnalyticsSummary = {
     ai_summary: string | null;
   }>;
   lastRefreshedAt: string;
+  conversationAnalytics: ConversationAnalyticsOverview;
+  serviceAnalytics: ServiceAnalyticsOverview;
+  transferTrend: { label: string; value: number }[];
+  ticketPriorityBreakdown: AnalyticsBreakdown[];
+  leaveSourceBreakdown: AnalyticsBreakdown[];
 };
 
 export function useDashboardSummary() {
@@ -193,6 +204,25 @@ export function useVideoSnapshots(sessionId: number | null | undefined) {
   });
 }
 
+export function useVideoRecordings(sessionId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['platform-api', 'video', 'recordings', sessionId],
+    enabled: typeof sessionId === 'number',
+    queryFn: async (): Promise<VideoRecording[]> => {
+      const payload = await requestJson<VideoRecordingListResponse>(`/video/sessions/${sessionId}/recordings`);
+      return payload.items ?? [];
+    },
+  });
+}
+
+export function useVideoSessionSummary(sessionId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['platform-api', 'video', 'summary', sessionId],
+    enabled: typeof sessionId === 'number',
+    queryFn: () => requestJson<VideoSession>(`/video/sessions/${sessionId}/summary`),
+  });
+}
+
 export function useStartVideoSession() {
   return useMutation({
     mutationFn: (payload: VideoSessionStartInput) =>
@@ -236,6 +266,46 @@ export function useTransferVideoSessionTicket() {
   return useMutation({
     mutationFn: (variables: { sessionId: number; payload: VideoSessionTransferTicketInput }) =>
       requestJson<Ticket>(`/video/sessions/${variables.sessionId}/transfer-ticket`, {
+        method: 'POST',
+        body: variables.payload,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
+    },
+  });
+}
+
+export function useUploadVideoRecording() {
+  return useMutation({
+    mutationFn: (variables: {
+      sessionId: number;
+      file: File;
+      label?: string | null;
+      note?: string | null;
+      durationSeconds?: number | null;
+    }) => {
+      const formData = new FormData();
+      formData.append('file', variables.file);
+      if (variables.label) formData.append('label', variables.label);
+      if (variables.note) formData.append('note', variables.note);
+      if (variables.durationSeconds !== undefined && variables.durationSeconds !== null) {
+        formData.append('duration_seconds', String(variables.durationSeconds));
+      }
+      return requestJson<VideoRecording>(`/video/sessions/${variables.sessionId}/recordings/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api'] });
+    },
+  });
+}
+
+export function useUpsertVideoSessionSummary() {
+  return useMutation({
+    mutationFn: (variables: { sessionId: number; payload: VideoSessionSummaryInput }) =>
+      requestJson<VideoSession>(`/video/sessions/${variables.sessionId}/summary`, {
         method: 'POST',
         body: variables.payload,
       }),
@@ -528,7 +598,11 @@ export function useAnalytics() {
   return useQuery({
     queryKey: ['platform-api', 'analytics'],
     queryFn: async (): Promise<AnalyticsSummary> => {
-      const history = await requestJson<ConversationHistoryListResponse>('/conversation/conversations/history');
+      const [history, conversationAnalytics, serviceAnalytics] = await Promise.all([
+        requestJson<ConversationHistoryListResponse>('/conversation/conversations/history'),
+        requestJson<ConversationAnalyticsOverview>('/conversation/analytics/overview'),
+        requestJson<ServiceAnalyticsOverview>('/service/analytics/overview'),
+      ]);
       const recentHistory = [...(history.items ?? [])].sort((left, right) => {
         const leftTime = left.last_message_at ? new Date(left.last_message_at).getTime() : 0;
         const rightTime = right.last_message_at ? new Date(right.last_message_at).getTime() : 0;
@@ -576,12 +650,18 @@ export function useAnalytics() {
         totalMessages,
         averageSatisfaction:
           satisfactionSamples > 0 ? Number((totalSatisfaction / satisfactionSamples).toFixed(2)) : null,
-        statusBreakdown: [...statusCounts.entries()]
-          .map(([label, value]) => ({ label, value }))
-          .sort((left, right) => right.value - left.value),
-        channelBreakdown: [...channelCounts.entries()]
-          .map(([label, value]) => ({ label, value }))
-          .sort((left, right) => right.value - left.value),
+        statusBreakdown:
+          conversationAnalytics.status_distribution.length > 0
+            ? conversationAnalytics.status_distribution
+            : [...statusCounts.entries()]
+                .map(([label, value]) => ({ label, value }))
+                .sort((left, right) => right.value - left.value),
+        channelBreakdown:
+          conversationAnalytics.channel_distribution.length > 0
+            ? conversationAnalytics.channel_distribution
+            : [...channelCounts.entries()]
+                .map(([label, value]) => ({ label, value }))
+                .sort((left, right) => right.value - left.value),
         recentItems: recentHistory.slice(0, 8).map((item) => {
           const summary = summaryMap.get(item.id);
           return {
@@ -595,7 +675,15 @@ export function useAnalytics() {
             ai_summary: summary?.ai_summary ?? item.summary,
           };
         }),
-        lastRefreshedAt: new Date().toISOString(),
+        lastRefreshedAt: conversationAnalytics.last_refreshed_at,
+        conversationAnalytics,
+        serviceAnalytics,
+        transferTrend: conversationAnalytics.trend.map((item) => ({
+          label: item.date,
+          value: item.transferred_count,
+        })),
+        ticketPriorityBreakdown: serviceAnalytics.distribution.ticket_priority,
+        leaveSourceBreakdown: serviceAnalytics.distribution.leave_message_source,
       };
     },
   });

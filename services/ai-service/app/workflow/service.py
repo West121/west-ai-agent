@@ -5,6 +5,7 @@ import re
 from typing import Final
 
 from app.decision.pipeline import DecisionPipeline
+from app.workflow.graph import ComplexWorkflowGraph, classify_flow_category, normalize_query
 from app.workflow.types import SupportWorkflowRequest, SupportWorkflowResult, WorkflowAction
 
 PHONE_PATTERN: Final = re.compile(r"(?<!\d)(1[3-9]\d{9})(?!\d)")
@@ -95,9 +96,33 @@ def _merge_slots(context_slots: dict[str, str], extracted_slots: dict[str, str])
 @dataclass(frozen=True, slots=True)
 class SupportWorkflowService:
     pipeline: DecisionPipeline = field(default_factory=DecisionPipeline)
+    graph: ComplexWorkflowGraph = field(default_factory=ComplexWorkflowGraph)
 
     def run(self, request: SupportWorkflowRequest) -> SupportWorkflowResult:
-        normalized_query = _normalize_query(request.query)
+        normalized_query = normalize_query(request.query)
+        flow_category = classify_flow_category(request.query)
+        if flow_category is not None:
+            graph_result = self.graph.run(request)
+            return SupportWorkflowResult(
+                query=graph_result.query,
+                normalized_query=graph_result.normalized_query,
+                workflow_mode=graph_result.workflow_mode,
+                flow_category=graph_result.flow_category,
+                decision=graph_result.decision,
+                confidence=graph_result.confidence,
+                extracted_slots=graph_result.extracted_slots,
+                merged_slots=graph_result.merged_slots,
+                required_slots=graph_result.required_slots,
+                missing_slots=graph_result.missing_slots,
+                handoff_ready=graph_result.handoff_ready,
+                next_action=graph_result.next_action,
+                next_prompt=graph_result.next_prompt,
+                answer=graph_result.answer,
+                clarification=graph_result.clarification,
+                summary=graph_result.summary,
+                graph_trace=graph_result.graph_trace,
+            )
+
         extracted_slots = _extract_slots(request.query)
         merged_slots = _merge_slots(request.context_slots, extracted_slots)
 
@@ -127,6 +152,8 @@ class SupportWorkflowService:
         return SupportWorkflowResult(
             query=request.query,
             normalized_query=normalized_query,
+            workflow_mode="decision_pipeline",
+            flow_category=None,
             decision=decision_result.decision,
             confidence=decision_result.confidence,
             extracted_slots=extracted_slots,
@@ -139,6 +166,7 @@ class SupportWorkflowService:
             answer=decision_result.answer,
             clarification=decision_result.clarification,
             summary=summary,
+            graph_trace=["decision_pipeline"],
         )
 
     def _build_slot_prompt(self, issue_category: str, missing_slots: list[str]) -> str:

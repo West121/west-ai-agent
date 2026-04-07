@@ -1,4 +1,6 @@
 fastapi<1.0,>=0.115
+minio<8.0,>=7.2
+python-multipart<1.0,>=0.0.9
 psycopg[binary]<4.0,>=3.2
 pydantic-settings<3.0,>=2.6
 pyjwt<3.0,>=2.10

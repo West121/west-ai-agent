@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+import pytest
 
 
 def test_websocket_connection_updates_presence() -> None:
@@ -111,3 +112,71 @@ def test_http_append_message_broadcasts_and_persists() -> None:
         items = messages.json()["items"]
         assert len(items) == 1
         assert items[0]["sender_role"] == "assistant"
+
+
+@pytest.mark.parametrize(
+    ("event_type", "payload", "expected_keys"),
+    [
+        (
+            "video.offer",
+            {"type": "video.offer", "sdp": "offer-sdp", "session_id": "video-room-1"},
+            {"sdp": "offer-sdp"},
+        ),
+        (
+            "video.answer",
+            {"type": "video.answer", "sdp": "answer-sdp", "session_id": "video-room-1"},
+            {"sdp": "answer-sdp"},
+        ),
+        (
+            "video.ice-candidate",
+            {
+                "type": "video.ice-candidate",
+                "candidate": {"candidate": "candidate-a", "sdpMLineIndex": 0},
+                "session_id": "video-room-1",
+            },
+            {"candidate": {"candidate": "candidate-a", "sdpMLineIndex": 0}},
+        ),
+        (
+            "video.recording.started",
+            {
+                "type": "video.recording.started",
+                "recording_id": "rec-1",
+                "file_key": "video/rec-1.webm",
+                "playback_url": "/video/recordings/rec-1/playback",
+            },
+            {"recording_id": "rec-1", "file_key": "video/rec-1.webm"},
+        ),
+        (
+            "video.recording.stopped",
+            {
+                "type": "video.recording.stopped",
+                "recording_id": "rec-1",
+                "file_key": "video/rec-1.webm",
+                "duration_seconds": 132,
+                "playback_url": "/video/recordings/rec-1/playback",
+            },
+            {"recording_id": "rec-1", "duration_seconds": 132},
+        ),
+    ],
+)
+def test_video_signaling_events_relay_to_peer(
+    event_type: str,
+    payload: dict[str, object],
+    expected_keys: dict[str, object],
+) -> None:
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/video-room-1?client_id=agent-1&role=agent") as agent_ws:
+        agent_ws.receive_json()
+        with client.websocket_connect("/ws/video-room-1?client_id=customer-1&role=customer") as customer_ws:
+            customer_ws.receive_json()
+
+            agent_ws.send_json(payload)
+            relay = customer_ws.receive_json()
+
+            assert relay["type"] == event_type
+            assert relay["conversation_id"] == "video-room-1"
+            assert relay["sender_id"] == "agent-1"
+            assert relay["sender_role"] == "agent"
+            for key, value in expected_keys.items():
+                assert relay[key] == value

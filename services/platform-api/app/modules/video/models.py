@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, relationship
 
 from app.core.db import Base
@@ -36,6 +36,14 @@ class VideoSession(Base):
         nullable=True,
         index=True,
     )
+    ai_summary: Mapped[str] = Column(Text, nullable=False, default="暂无摘要")
+    operator_summary: Mapped[str | None] = Column(Text, nullable=True)
+    issue_category: Mapped[str | None] = Column(String(255), nullable=True, index=True)
+    resolution: Mapped[str | None] = Column(Text, nullable=True)
+    next_action: Mapped[str | None] = Column(Text, nullable=True)
+    handoff_reason: Mapped[str | None] = Column(Text, nullable=True)
+    follow_up_required: Mapped[bool] = Column(Boolean, nullable=False, default=False)
+    summary_updated_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     ended_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     ended_reason: Mapped[str | None] = Column(Text, nullable=True)
@@ -63,9 +71,15 @@ class VideoSnapshot(Base):
         nullable=False,
         index=True,
     )
+    entry_type: Mapped[str] = Column(String(32), nullable=False, default="snapshot", index=True)
     label: Mapped[str] = Column(String(255), nullable=False)
     note: Mapped[str | None] = Column(Text, nullable=True)
+    file_key: Mapped[str | None] = Column(String(255), nullable=True, index=True)
+    file_name: Mapped[str | None] = Column(String(255), nullable=True)
+    mime_type: Mapped[str | None] = Column(String(128), nullable=True)
+    duration_seconds: Mapped[int | None] = Column(Integer, nullable=True)
+    playback_url: Mapped[str | None] = Column(String(1024), nullable=True)
+    recorded_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 
     session: Mapped[VideoSession] = relationship("VideoSession", back_populates="snapshots")
-

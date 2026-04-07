@@ -51,6 +51,10 @@ function createDefaultVisitorDraft(): VisitorDraft {
   };
 }
 
+function shouldUseComplexWorkflow(query: string) {
+  return /(退款|退钱|售后|退换|换货|维修|返修|账号冻结|封号|锁定|账号异常)/i.test(query);
+}
+
 function formatTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
     hour: '2-digit',
@@ -293,7 +297,10 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
     setAiAdvice({ status: 'loading', query });
 
     try {
-      const decision = await requestAiDecision({ query, endpoint: 'answer' });
+      const decision = await requestAiDecision({
+        query,
+        endpoint: shouldUseComplexWorkflow(query) ? 'triage' : 'answer',
+      });
 
       if (decision.decision === 'answer' && decision.answer) {
         await appendConversationMessage(conversation!.id, {
@@ -771,7 +778,9 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
                 <>
                   <p className="mt-2 whitespace-pre-wrap">{aiAdvice.response.answer}</p>
                   <p className="mt-1 text-xs opacity-80">
-                    决策：{aiAdvice.response.decision} · 置信度 {aiAdvice.response.confidence.toFixed(2)}
+                    决策：{aiAdvice.response.decision}
+                    {aiAdvice.response.workflow_mode ? ` · 流程 ${aiAdvice.response.workflow_mode}` : ''}
+                    · 置信度 {aiAdvice.response.confidence.toFixed(2)}
                   </p>
                 </>
               ) : null}
@@ -779,7 +788,9 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
                 <>
                   <p className="mt-2">{aiAdvice.message}</p>
                   <p className="mt-1 text-xs opacity-80">
-                    决策：{aiAdvice.response.decision} · 置信度 {aiAdvice.response.confidence.toFixed(2)}
+                    决策：{aiAdvice.response.decision}
+                    {aiAdvice.response.workflow_mode ? ` · 流程 ${aiAdvice.response.workflow_mode}` : ''}
+                    · 置信度 {aiAdvice.response.confidence.toFixed(2)}
                   </p>
                 </>
               ) : null}

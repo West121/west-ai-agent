@@ -35,13 +35,38 @@ class VideoSnapshotRead(BaseModel):
 
     id: int
     session_id: int
+    entry_type: str
     label: str
     note: str | None
+    file_key: str | None
+    file_name: str | None
+    mime_type: str | None
+    duration_seconds: int | None
+    playback_url: str | None
+    recorded_at: datetime | None
     created_at: datetime
 
 
 class VideoSnapshotListResponse(BaseModel):
     items: list[VideoSnapshotRead]
+
+
+class VideoRecordingCreate(BaseModel):
+    label: str | None = Field(default=None, max_length=255)
+    note: str | None = None
+    file_key: str | None = Field(default=None, max_length=255)
+    file_name: str | None = Field(default=None, max_length=255)
+    mime_type: str | None = Field(default=None, max_length=128)
+    duration_seconds: int | None = Field(default=None, ge=0)
+    playback_url: str | None = Field(default=None, max_length=1024)
+
+
+class VideoRecordingRead(VideoSnapshotRead):
+    pass
+
+
+class VideoRecordingListResponse(BaseModel):
+    items: list[VideoRecordingRead]
 
 
 class VideoSessionRead(BaseModel):
@@ -53,6 +78,14 @@ class VideoSessionRead(BaseModel):
     assignee: str | None
     status: str
     ticket_id: int | None
+    ai_summary: str
+    operator_summary: str | None
+    issue_category: str | None
+    resolution: str | None
+    next_action: str | None
+    handoff_reason: str | None
+    follow_up_required: bool
+    summary_updated_at: datetime | None
     started_at: datetime
     ended_at: datetime | None
     ended_reason: str | None
@@ -60,8 +93,19 @@ class VideoSessionRead(BaseModel):
     updated_at: datetime
     snapshot_count: int
     latest_snapshot_at: datetime | None
+    recording_count: int
+    latest_recording_at: datetime | None
+
+
+class VideoSessionSummaryUpsert(BaseModel):
+    ai_summary: str | None = None
+    operator_summary: str | None = None
+    issue_category: str | None = Field(default=None, max_length=255)
+    resolution: str | None = None
+    next_action: str | None = None
+    handoff_reason: str | None = None
+    follow_up_required: bool | None = None
 
 
 class VideoSessionListResponse(BaseModel):
     items: list[VideoSessionRead]
-
