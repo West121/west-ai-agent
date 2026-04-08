@@ -1,29 +1,35 @@
+name: west-ai-agent
+
 services:
   postgres:
+    container_name: west-ai-agent-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-platform}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-15432}:5432"
 
   redis:
+    container_name: west-ai-agent-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-16379}:6379"
 
   minio:
+    container_name: west-ai-agent-minio
     restart: unless-stopped
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_API_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
 
   opensearch:
+    container_name: west-ai-agent-opensearch
     restart: unless-stopped
     environment:
       discovery.type: single-node
@@ -32,10 +38,11 @@ services:
       OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?set OPENSEARCH_INITIAL_ADMIN_PASSWORD}
       OPENSEARCH_JAVA_OPTS: "${OPENSEARCH_JAVA_OPTS:--Xms1g -Xmx1g}"
     ports:
-      - "${OPENSEARCH_HTTP_PORT:-9200}:9200"
-      - "${OPENSEARCH_METRICS_PORT:-9600}:9600"
+      - "${OPENSEARCH_HTTP_PORT:-19200}:9200"
+      - "${OPENSEARCH_METRICS_PORT:-19600}:9600"
 
   platform-api:
+    container_name: west-ai-agent-platform-api
     restart: unless-stopped
     build:
       context: ../..
@@ -62,9 +69,10 @@ services:
       - minio
       - opensearch
     ports:
-      - "8000:8000"
+      - "${PLATFORM_API_PORT:-18000}:8000"
 
   message-gateway:
+    container_name: west-ai-agent-message-gateway
     restart: unless-stopped
     build:
       context: ../..
@@ -76,9 +84,10 @@ services:
       APP_GATEWAY_PORT: 8010
       APP_CORS_ORIGINS: '${APP_CORS_ORIGINS:-["http://127.0.0.1:8080","http://127.0.0.1:8081"]}'
     ports:
-      - "8010:8010"
+      - "${MESSAGE_GATEWAY_PORT:-18010}:8010"
 
   ai-service:
+    container_name: west-ai-agent-ai-service
     restart: unless-stopped
     build:
       context: ../..
@@ -105,9 +114,10 @@ services:
     depends_on:
       - opensearch
     ports:
-      - "8020:8020"
+      - "${AI_SERVICE_PORT:-18020}:8020"
 
   worker-jobs:
+    container_name: west-ai-agent-worker-jobs
     restart: "no"
     profiles:
       - jobs
@@ -133,6 +143,7 @@ services:
     command: ["worker-jobs", "--job", "smoke"]
 
   admin-web:
+    container_name: west-ai-agent-admin-web
     restart: unless-stopped
     build:
       context: ../..
@@ -142,9 +153,10 @@ services:
     depends_on:
       - platform-api
     ports:
-      - "8080:80"
+      - "${ADMIN_WEB_PORT:-14173}:80"
 
   customer-h5:
+    container_name: west-ai-agent-customer-h5
     restart: unless-stopped
     build:
       context: ../..
@@ -158,4 +170,4 @@ services:
       - message-gateway
       - ai-service
     ports:
-      - "8081:80"
+      - "${CUSTOMER_H5_PORT:-14174}:80"

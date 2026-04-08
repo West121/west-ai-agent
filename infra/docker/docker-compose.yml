@@ -1,12 +1,15 @@
+name: west-ai-agent
+
 services:
   postgres:
+    container_name: west-ai-agent-postgres
     image: postgres:16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-platform}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-15432}:5432"
     volumes:
       - ${PLATFORM_DATA_ROOT:-../../data}/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -17,9 +20,10 @@ services:
       start_period: 5s
 
   redis:
+    container_name: west-ai-agent-redis
     image: redis:7
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-16379}:6379"
     volumes:
       - ${PLATFORM_DATA_ROOT:-../../data}/redis:/data
     healthcheck:
@@ -30,14 +34,15 @@ services:
       start_period: 3s
 
   minio:
+    container_name: west-ai-agent-minio
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio123}
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_API_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
     volumes:
       - ${PLATFORM_DATA_ROOT:-../../data}/minio:/data
     healthcheck:
@@ -48,6 +53,7 @@ services:
       start_period: 5s
 
   opensearch:
+    container_name: west-ai-agent-opensearch
     image: opensearchproject/opensearch:2.15.0
     environment:
       discovery.type: single-node
@@ -56,8 +62,8 @@ services:
       OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-Admin123!Admin123!}
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
     ports:
-      - "${OPENSEARCH_HTTP_PORT:-9200}:9200"
-      - "${OPENSEARCH_METRICS_PORT:-9600}:9600"
+      - "${OPENSEARCH_HTTP_PORT:-19200}:9200"
+      - "${OPENSEARCH_METRICS_PORT:-19600}:9600"
     volumes:
       - ${PLATFORM_DATA_ROOT:-../../data}/opensearch:/usr/share/opensearch/data
     healthcheck:

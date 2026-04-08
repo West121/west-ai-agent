@@ -27,6 +27,13 @@ app/providers/registry.py
 app/providers/vllm_provider.py
 app/routes/__init__.py
 app/routes/health.py
+app/workflow/__init__.py
+app/workflow/graph.py
+app/workflow/service.py
+app/workflow/types.py
 tests/test_api.py
 tests/test_decision_api.py
 tests/test_health.py
+tests/test_query_rewrite.py
+tests/test_retrieval_service.py
+tests/test_workflow_api.py

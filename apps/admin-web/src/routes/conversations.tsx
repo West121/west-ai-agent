@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+
+import { useQuery } from '@tanstack/react-query';
 
 import {
   useConversationSatisfaction,
@@ -8,8 +10,10 @@ import {
   useEndConversation,
   useTransferConversation,
 } from '@/hooks/use-platform-api';
+import { useMessageGateway, type ChatMessage } from '@/hooks/use-message-gateway';
 import { formatDateTime, formatDateTimeRelative } from '@/lib/format';
 import { ApiError } from '@/lib/platform-api';
+import { appendConversationMessage, getConversationMessages } from '@/lib/message-gateway';
 
 function statusTone(status: string) {
   const normalized = status.toLowerCase();
@@ -28,6 +32,9 @@ export function ConversationsPage() {
   const [transferAssignee, setTransferAssignee] = useState('');
   const [actionReason, setActionReason] = useState('');
   const [operationMessage, setOperationMessage] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [sendingReply, setSendingReply] = useState(false);
   const conversationsQuery = useConversations();
   const customersQuery = useCustomers();
   const transferMutation = useTransferConversation();
@@ -83,14 +90,70 @@ export function ConversationsPage() {
 
   const summaryQuery = useConversationSummary(selectedConversation?.id);
   const satisfactionQuery = useConversationSatisfaction(selectedConversation?.id);
+  const agentClientId = useMemo(
+    () => `admin-agent-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`,
+    [],
+  );
+  const gateway = useMessageGateway({
+    conversationId: selectedConversation ? String(selectedConversation.id) : null,
+    clientId: agentClientId,
+    role: 'agent',
+  });
+  const historyQuery = useQuery({
+    queryKey: ['admin-web', 'conversation-messages', selectedConversation?.id],
+    enabled: typeof selectedConversation?.id === 'number',
+    queryFn: () => getConversationMessages(selectedConversation!.id),
+  });
 
   useEffect(() => {
     if (selectedConversation) {
       setTransferAssignee(selectedConversation.assignee ?? '');
       setActionReason('');
       setOperationMessage(null);
+      setReplyDraft('');
+      setReplyError(null);
     }
   }, [selectedConversation?.id, selectedConversation?.assignee]);
+
+  const historyMessages = useMemo(
+    () =>
+      historyQuery.data?.items.map((message) => ({
+        id: message.id,
+        conversationId: message.conversation_id,
+        senderId: message.sender_id,
+        senderRole: message.sender_role,
+        text: message.text,
+        createdAt: message.created_at,
+        status: message.status,
+        ackedBy: message.acked_by,
+        ackedAt: message.acked_at,
+      })) ?? [],
+    [historyQuery.data],
+  );
+  const combinedMessages = useMemo(
+    () => mergeChatMessages(historyMessages, gateway.messages),
+    [gateway.messages, historyMessages],
+  );
+
+  useEffect(() => {
+    if (!selectedConversation || gateway.status !== 'open') {
+      return;
+    }
+
+    for (const message of combinedMessages) {
+      const shouldAck =
+        message.senderRole !== 'agent' &&
+        message.senderId !== agentClientId &&
+        message.status !== 'read' &&
+        message.ackedBy !== agentClientId;
+
+      if (!shouldAck) {
+        continue;
+      }
+
+      gateway.sendAck(message.id);
+    }
+  }, [agentClientId, combinedMessages, gateway, selectedConversation]);
 
   async function handleTransferConversation() {
     if (!selectedConversation) {
@@ -119,6 +182,34 @@ export function ConversationsPage() {
       },
     });
     setOperationMessage('会话已结束，状态与时间已同步。');
+  }
+
+  async function handleSendReply(event: FormEvent) {
+    event.preventDefault();
+
+    const text = replyDraft.trim();
+    if (!text || !selectedConversation) {
+      return;
+    }
+
+    setSendingReply(true);
+    setReplyError(null);
+
+    try {
+      gateway.sendMessage(text);
+      await appendConversationMessage(selectedConversation.id, {
+        sender_id: agentClientId,
+        sender_role: 'agent',
+        text,
+      });
+      setReplyDraft('');
+      void historyQuery.refetch();
+      void summaryQuery.refetch();
+    } catch (error) {
+      setReplyError(error instanceof Error ? error.message : '发送回复失败');
+    } finally {
+      setSendingReply(false);
+    }
   }
 
   if (conversationsQuery.isLoading || customersQuery.isLoading) {
@@ -280,6 +371,100 @@ export function ConversationsPage() {
                     {selectedConversation.ended_at ? formatDateTime(selectedConversation.ended_at) : '尚未结束'}
                   </p>
                 </div>
+              </div>
+
+              <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-slate-900">实时对话</p>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
+                      gateway {gateway.status}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => historyQuery.refetch()}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-200 hover:text-sky-700"
+                    >
+                      刷新消息
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 max-h-[26rem] space-y-3 overflow-y-auto rounded-[1rem] bg-slate-50/80 p-4">
+                  {historyQuery.isLoading ? (
+                    <p className="text-sm text-slate-500">正在读取消息历史...</p>
+                  ) : historyQuery.isError ? (
+                    <div className="rounded-[1rem] border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-800">
+                      {historyQuery.error instanceof Error ? historyQuery.error.message : '读取消息历史失败'}
+                    </div>
+                  ) : combinedMessages.length > 0 ? (
+                    combinedMessages.map((message) => {
+                      const isAgent = message.senderRole === 'agent';
+                      return (
+                        <div
+                          key={message.id}
+                          className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            className={[
+                              'max-w-[82%] rounded-[1.15rem] border px-4 py-3 shadow-sm',
+                              isAgent
+                                ? 'border-sky-200 bg-sky-50 text-slate-900'
+                                : 'border-slate-200 bg-white text-slate-900',
+                            ].join(' ')}
+                          >
+                            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                              <span>{isAgent ? 'agent' : message.senderRole}</span>
+                              <span>·</span>
+                              <span>{formatDateTimeRelative(message.createdAt)}</span>
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{message.text}</p>
+                            <div className="mt-2 text-[11px] text-slate-500">
+                              {formatMessageReadStatus(message)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-slate-500">当前会话还没有消息。先在 H5 侧发送消息，再从这里转人工接待。</p>
+                  )}
+                </div>
+
+                <form className="mt-4 space-y-3" onSubmit={handleSendReply}>
+                  <textarea
+                    value={replyDraft}
+                    onChange={(event) => setReplyDraft(event.target.value)}
+                    rows={4}
+                    placeholder="输入人工客服回复内容，发送后会实时推送到用户侧。"
+                    disabled={!selectedConversation || selectedConversation.status === 'ended'}
+                    className="w-full rounded-[1.25rem] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-slate-500">
+                      当前接待人：{selectedConversation.assignee ?? '未分配'} · 状态：{selectedConversation.status}
+                    </p>
+                    <button
+                      type="submit"
+                      disabled={!replyDraft.trim() || sendingReply || selectedConversation.status === 'ended'}
+                      className="inline-flex items-center justify-center rounded-2xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {sendingReply ? '发送中...' : '发送回复'}
+                    </button>
+                  </div>
+                </form>
+
+                {gateway.error ? (
+                  <div className="mt-3 rounded-[1rem] border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-800">
+                    {gateway.error}
+                  </div>
+                ) : null}
+
+                {replyError ? (
+                  <div className="mt-3 rounded-[1rem] border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-800">
+                    {replyError}
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4">
@@ -450,4 +635,58 @@ export function ConversationsPage() {
       </div>
     </section>
   );
+}
+
+function mergeChatMessages(...groups: ChatMessage[][]): ChatMessage[] {
+  const byId = new Map<string, ChatMessage>();
+
+  for (const group of groups) {
+    for (const message of group) {
+      const existing = byId.get(message.id);
+      if (!existing) {
+        byId.set(message.id, message);
+        continue;
+      }
+      byId.set(message.id, mergeSingleMessage(existing, message));
+    }
+  }
+
+  return Array.from(byId.values()).sort(
+    (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
+}
+
+function mergeSingleMessage(current: ChatMessage, incoming: ChatMessage): ChatMessage {
+  const currentScore = messageCompleteness(current);
+  const incomingScore = messageCompleteness(incoming);
+
+  if (incomingScore > currentScore) {
+    return { ...current, ...incoming };
+  }
+  if (incomingScore < currentScore) {
+    return { ...incoming, ...current };
+  }
+  return { ...current, ...incoming };
+}
+
+function messageCompleteness(message: ChatMessage): number {
+  return [message.createdAt, message.status, message.ackedBy, message.ackedAt, message.text].reduce(
+    (score, value) => score + (value ? 1 : 0),
+    0,
+  );
+}
+
+function formatMessageReadStatus(message: ChatMessage): string {
+  const status = message.status?.toLowerCase().trim();
+  const ackedBy = message.ackedBy?.trim();
+  const ackedAt = message.ackedAt?.trim();
+
+  if (status === 'read') {
+    const detail = [ackedBy, ackedAt ? formatDateTimeRelative(ackedAt) : null].filter(Boolean).join(' · ');
+    return detail ? `已读 · ${detail}` : '已读';
+  }
+  if (status === 'delivered') {
+    return '已送达';
+  }
+  return '待回执';
 }

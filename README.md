@@ -108,11 +108,11 @@ docker compose -f infra/docker/docker-compose.yml up -d
 
 默认会启动：
 
-- PostgreSQL: `127.0.0.1:5432`
-- Redis: `127.0.0.1:6379`
-- MinIO API: `127.0.0.1:9000`
-- MinIO Console: `127.0.0.1:9001`
-- OpenSearch: `127.0.0.1:9200`
+- PostgreSQL: `127.0.0.1:15432`
+- Redis: `127.0.0.1:16379`
+- MinIO API: `127.0.0.1:19000`
+- MinIO Console: `127.0.0.1:19001`
+- OpenSearch: `127.0.0.1:19200`
 
 更多说明见 [infra/docker/README.md](/Users/west/dev/code/west/west-ai-agent/infra/docker/README.md)。
 
@@ -140,9 +140,9 @@ pnpm dev:h5
 分别在对应目录执行：
 
 ```bash
-cd services/platform-api && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
-cd services/message-gateway && uv run uvicorn app.main:app --host 127.0.0.1 --port 8010
-cd services/ai-service && uv run uvicorn app.main:app --host 127.0.0.1 --port 8020
+cd services/platform-api && uv run uvicorn app.main:app --host 127.0.0.1 --port 18000
+cd services/message-gateway && uv run uvicorn app.main:app --host 127.0.0.1 --port 18010
+cd services/ai-service && uv run uvicorn app.main:app --host 127.0.0.1 --port 18020
 ```
 
 离线任务示例：
@@ -188,7 +188,7 @@ pnpm test:smoke
 - `ai-service` provider 列表和 `/chat/completions`
 - `message-gateway` WebSocket 收发、`message.ack`、历史消息接口
 
-测试栈默认使用独立端口，不会占用本机常驻的 `5432/6379/9000/9200`。
+测试栈默认使用独立端口，不会占用本机常驻的 `15432/16379/19000/19200`。
 
 如果服务已经在本机运行，也可以只执行在线烟测：
 

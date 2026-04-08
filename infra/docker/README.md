@@ -66,12 +66,12 @@ docker compose -f infra/docker/docker-compose.yml down -v
 
 ## Ports
 
-- PostgreSQL: `${POSTGRES_PORT:-5432}`
-- Redis: `${REDIS_PORT:-6379}`
-- MinIO API: `${MINIO_API_PORT:-9000}`
-- MinIO Console: `${MINIO_CONSOLE_PORT:-9001}`
-- OpenSearch API: `${OPENSEARCH_HTTP_PORT:-9200}`
-- OpenSearch Metrics: `${OPENSEARCH_METRICS_PORT:-9600}`
+- PostgreSQL: `${POSTGRES_PORT:-15432}`
+- Redis: `${REDIS_PORT:-16379}`
+- MinIO API: `${MINIO_API_PORT:-19000}`
+- MinIO Console: `${MINIO_CONSOLE_PORT:-19001}`
+- OpenSearch API: `${OPENSEARCH_HTTP_PORT:-19200}`
+- OpenSearch Metrics: `${OPENSEARCH_METRICS_PORT:-19600}`
 
 ## Required Environment Variables
 
@@ -124,8 +124,8 @@ docker compose -f infra/docker/docker-compose.yml ps
 快速探活示例：
 
 ```bash
-curl http://127.0.0.1:9200
-curl http://127.0.0.1:9001
+curl http://127.0.0.1:19200
+curl http://127.0.0.1:19001
 ```
 
 ## Deployment Notes
