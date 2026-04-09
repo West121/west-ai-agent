@@ -11,6 +11,10 @@ export const aiServiceBaseUrl = normalizeBaseUrl(
   import.meta.env.VITE_AI_SERVICE_BASE_URL ?? 'http://localhost:8020',
 );
 
+export const voiceRealtimeServiceBaseUrl = normalizeBaseUrl(
+  import.meta.env.VITE_VOICE_REALTIME_SERVICE_BASE_URL ?? 'http://localhost:18030',
+);
+
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, '');
 }

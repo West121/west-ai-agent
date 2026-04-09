@@ -407,6 +407,108 @@ export type VideoSessionSummaryInput = {
   follow_up_required?: boolean | null;
 };
 
+export type VoiceSessionStatus = string;
+
+export type VoiceSession = {
+  id: number;
+  conversation_id: number;
+  customer_profile_id: number;
+  channel: string;
+  status: VoiceSessionStatus;
+  livekit_room: string | null;
+  stt_provider: string;
+  finalizer_provider: string;
+  tts_provider: string;
+  handoff_pending: boolean;
+  transcript_count: number;
+  audio_asset_count: number;
+  handoff_count: number;
+  started_at: string;
+  ended_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type VoiceSessionListResponse = {
+  items: VoiceSession[];
+};
+
+export type VoiceSessionCreateInput = {
+  conversation_id: number;
+  customer_profile_id: number;
+  channel?: string;
+  status?: string;
+  livekit_room?: string | null;
+  stt_provider?: string;
+  finalizer_provider?: string;
+  tts_provider?: string;
+};
+
+export type VoiceTranscriptSegment = {
+  id: number;
+  voice_session_id: number;
+  speaker: string;
+  text: string;
+  normalized_text: string | null;
+  is_final: boolean;
+  start_ms: number | null;
+  end_ms: number | null;
+  created_at: string;
+};
+
+export type VoiceTranscriptListResponse = {
+  items: VoiceTranscriptSegment[];
+};
+
+export type VoiceTranscriptSegmentCreateInput = {
+  speaker?: string;
+  text: string;
+  normalized_text?: string | null;
+  is_final?: boolean;
+  start_ms?: number | null;
+  end_ms?: number | null;
+};
+
+export type VoiceAudioAsset = {
+  id: number;
+  voice_session_id: number;
+  asset_type: string;
+  file_key: string;
+  mime_type: string;
+  duration_ms: number | null;
+  created_at: string;
+};
+
+export type VoiceAudioAssetListResponse = {
+  items: VoiceAudioAsset[];
+};
+
+export type VoiceAudioAssetCreateInput = {
+  asset_type: string;
+  file_key: string;
+  mime_type: string;
+  duration_ms?: number | null;
+};
+
+export type VoiceHandoff = {
+  id: number;
+  voice_session_id: number;
+  reason: string;
+  summary: string;
+  handed_off_to: string | null;
+  created_at: string;
+};
+
+export type VoiceHandoffListResponse = {
+  items: VoiceHandoff[];
+};
+
+export type VoiceHandoffCreateInput = {
+  reason: string;
+  summary: string;
+  handed_off_to?: string | null;
+};
+
 export type AnalyticsBreakdown = {
   label: string;
   value: number;
@@ -549,6 +651,76 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
 
   const response = await fetch(buildUrl(path), init);
   return parseResponse<T>(response);
+}
+
+function buildVoiceQueryPath(
+  path: string,
+  params: Record<string, string | number | null | undefined> = {},
+): string {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === '') {
+      return;
+    }
+    searchParams.set(key, String(value));
+  });
+  return searchParams.toString() ? `${path}?${searchParams.toString()}` : path;
+}
+
+export function getVoiceSessions(
+  filters: { conversationId?: number | null; customerProfileId?: number | null; status?: string | null } = {},
+) {
+  return requestJson<VoiceSessionListResponse>(
+    buildVoiceQueryPath('/voice/sessions', {
+      conversation_id: filters.conversationId,
+      customer_profile_id: filters.customerProfileId,
+      status: filters.status,
+    }),
+  );
+}
+
+export function getVoiceSession(voiceSessionId: number) {
+  return requestJson<VoiceSession>(`/voice/sessions/${voiceSessionId}`);
+}
+
+export function createVoiceSession(payload: VoiceSessionCreateInput) {
+  return requestJson<VoiceSession>('/voice/sessions', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export function getVoiceTranscripts(voiceSessionId: number) {
+  return requestJson<VoiceTranscriptListResponse>(`/voice/sessions/${voiceSessionId}/transcripts`);
+}
+
+export function appendVoiceTranscript(voiceSessionId: number, payload: VoiceTranscriptSegmentCreateInput) {
+  return requestJson<VoiceTranscriptSegment>(`/voice/sessions/${voiceSessionId}/transcripts`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export function getVoiceAudioAssets(voiceSessionId: number) {
+  return requestJson<VoiceAudioAssetListResponse>(`/voice/sessions/${voiceSessionId}/assets`);
+}
+
+export function createVoiceAudioAsset(voiceSessionId: number, payload: VoiceAudioAssetCreateInput) {
+  return requestJson<VoiceAudioAsset>(`/voice/sessions/${voiceSessionId}/assets`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export function getVoiceHandoffs(voiceSessionId: number) {
+  return requestJson<VoiceHandoffListResponse>(`/voice/sessions/${voiceSessionId}/handoff`);
+}
+
+export function createVoiceHandoff(voiceSessionId: number, payload: VoiceHandoffCreateInput) {
+  return requestJson<VoiceHandoff>(`/voice/sessions/${voiceSessionId}/handoff`, {
+    method: 'POST',
+    body: payload,
+  });
 }
 
 export function getStoredAccessToken() {

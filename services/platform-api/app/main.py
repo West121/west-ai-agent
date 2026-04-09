@@ -17,6 +17,7 @@ from app.modules.customer.models import CustomerProfile
 from app.modules.knowledge.models import KnowledgeDocument
 from app.modules.service.models import LeaveMessage, Ticket
 from app.modules.auth.security import hash_password
+from app.modules.voice.models import VoiceAudioAsset, VoiceHandoffRecord, VoiceSession, VoiceTranscriptSegment
 
 settings = get_settings()
 DEFAULT_JWT_SECRET = "dev-secret-for-platform-api-please-change"
@@ -127,6 +128,8 @@ def seed_default_admin() -> None:
             "video.write",
             "export.read",
             "export.write",
+            "voice.read",
+            "voice.write",
         ]
         existing_permissions = {
             permission.name: permission for permission in session.query(Permission).all()

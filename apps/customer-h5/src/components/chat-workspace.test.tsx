@@ -300,4 +300,65 @@ describe('ChatWorkspace', () => {
     expect((await screen.findAllByText(/已准备好转人工/)).length).toBeGreaterThan(0);
     expect(await screen.findByText(/类别 refund/)).toBeInTheDocument();
   });
+
+  it('starts a voice session and shows finalized transcript with AI reply', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+      if (url === 'http://localhost:18030/sessions/start' && method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            voice_session_id: 901,
+            livekit_room: 'voice-2001',
+            status: 'listening',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      if (url === 'http://localhost:18030/sessions/901/finalize' && method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            decision: 'answer',
+            transcript: '我想咨询苹果手机售后',
+            normalized_text: '我想咨询苹果手机售后。',
+            answer: '可以先告诉我具体型号和城市，我会继续给你推荐售后门店。',
+            clarification: null,
+            handoff: false,
+            audio_mime_type: 'audio/wav',
+            audio_duration_ms: 1200,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ChatWorkspace mode="standalone" />, { wrapper: createWrapper() });
+
+    await userEvent.click(screen.getByRole('button', { name: '创建并连接会话' }));
+    await userEvent.click(await screen.findByRole('button', { name: '开始语音会话' }));
+
+    const voiceDraft = await screen.findByLabelText('实时转写草稿');
+    await userEvent.type(voiceDraft, '我想咨询苹果手机售后');
+    await userEvent.click(screen.getByRole('button', { name: '完成本轮' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:18030/sessions/start',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:18030/sessions/901/finalize',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    expect(await screen.findByText('智能语音客服')).toBeInTheDocument();
+    expect(screen.getAllByText('可以先告诉我具体型号和城市，我会继续给你推荐售后门店。').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('标准化：我想咨询苹果手机售后。').length).toBeGreaterThan(0);
+  });
 });

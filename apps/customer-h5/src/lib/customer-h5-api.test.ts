@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { requestAiDecision } from '@/lib/customer-h5-api';
+import {
+  appendVoiceTranscript,
+  finalizeVoiceTurn,
+  requestAiDecision,
+  startVoiceSession,
+} from '@/lib/customer-h5-api';
 
 describe('requestAiDecision', () => {
   afterEach(() => {
@@ -105,5 +110,125 @@ describe('requestAiDecision', () => {
       }),
     );
     expect(result.workflow_mode).toBe('langgraph');
+  });
+
+  it('can start a voice session against voice-realtime-service', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          voice_session_id: 88,
+          livekit_room: 'voice-88',
+          status: 'connecting',
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await startVoiceSession({
+      conversation_id: 2001,
+      customer_profile_id: 101,
+      livekit_room: 'voice-88',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:18030/sessions/start',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          conversation_id: 2001,
+          customer_profile_id: 101,
+          livekit_room: 'voice-88',
+        }),
+      }),
+    );
+    expect(result.voice_session_id).toBe(88);
+  });
+
+  it('can append a voice transcript chunk', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 7,
+          voice_session_id: 88,
+          speaker: 'customer',
+          text: '苹果手机',
+          normalized_text: 'iPhone',
+          is_final: false,
+          start_ms: 0,
+          end_ms: 1200,
+          created_at: '2026-04-09T01:00:00.000Z',
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await appendVoiceTranscript(88, {
+      transcript_text: '苹果手机',
+      speaker: 'customer',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:18030/sessions/88/partial',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          speaker: 'customer',
+          transcript_text: '苹果手机',
+        }),
+      }),
+    );
+    expect(result.id).toBe(7);
+    expect(result.normalized_text).toBe('iPhone');
+  });
+
+  it('can finalize a voice turn and receive a spoken reply summary', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          decision: 'answer',
+          transcript: '苹果手机怎么选？',
+          normalized_text: 'iPhone 手机怎么选？',
+          answer: '建议根据预算和拍照需求选择。',
+          clarification: null,
+          handoff: false,
+          audio_mime_type: 'audio/mpeg',
+          audio_duration_ms: 1320,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await finalizeVoiceTurn(88, {
+      conversation_id: 2001,
+      transcript_text: '苹果手机怎么选？',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:18030/sessions/88/finalize',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          conversation_id: 2001,
+          transcript_text: '苹果手机怎么选？',
+        }),
+      }),
+    );
+    expect(result.decision).toBe('answer');
+    expect(result.audio_mime_type).toBe('audio/mpeg');
   });
 });

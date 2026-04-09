@@ -53,6 +53,31 @@ test.describe('customer-h5 standalone flows', () => {
     ).toBeVisible();
   });
 
+  test('starts a voice session, appends a partial transcript, and finalizes an AI-assisted turn', async ({ page }) => {
+    const uniqueSuffix = Date.now();
+    const transcript = `我想咨询 iPhone 16 Pro 的保修和维修门店，订单号 TK${uniqueSuffix}`;
+
+    await page.goto(`${customerH5Url}/standalone`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '创建并连接会话' }).click();
+    await expect(page.getByText(/会话 #\d+/)).toBeVisible();
+
+    await page.getByRole('button', { name: '开始语音会话' }).click();
+    await expect(page.getByText(/会话 \d+/)).toBeVisible();
+    await expect(page.getByRole('textbox', { name: '实时转写草稿' })).toBeEnabled();
+
+    const voiceDraft = page.getByRole('textbox', { name: '实时转写草稿' });
+    await voiceDraft.fill(transcript);
+
+    await page.getByRole('button', { name: '追加转写' }).click();
+    await expect(page.getByText(transcript)).toBeVisible();
+
+    await page.getByRole('button', { name: '完成本轮' }).click();
+    const aiResultCard = page.getByTestId('voice-last-turn');
+    await expect(aiResultCard).toBeVisible();
+    await expect(aiResultCard.getByText(/最新 AI 结果/)).toBeVisible();
+    await expect(aiResultCard.getByText(/Apple|iPhone|门店|保修|维修|建议/)).toBeVisible();
+  });
+
   test('submits a leave message from standalone leave-message page', async ({ page }) => {
     const uniqueSuffix = Date.now();
     const subject = `Playwright 留言主题 ${uniqueSuffix}`;

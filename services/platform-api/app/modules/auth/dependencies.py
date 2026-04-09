@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import get_settings
 from app.core.db import get_db as core_get_db
 from app.modules.auth.models import Role, User
 from app.modules.auth.security import decode_access_token
@@ -18,6 +19,20 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
+    settings = get_settings()
+
+    if credentials.credentials == settings.app_internal_service_token:
+        internal_user = (
+            db.query(User)
+            .options(selectinload(User.role).selectinload(Role.permissions))
+            .filter(User.is_active.is_(True))
+            .order_by(User.id.asc())
+            .first()
+        )
+        if internal_user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Internal service user not found")
+        return internal_user
+
     try:
         payload = decode_access_token(credentials.credentials)
         user_id = int(payload["sub"])

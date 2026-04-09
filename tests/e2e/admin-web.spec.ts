@@ -106,6 +106,33 @@ test.describe('admin-web critical flows', () => {
     await expect(detailSection.getByText('发布版 2')).toBeVisible();
   });
 
+  test('creates a voice session, appends transcript, and creates a handoff record from conversations workspace', async ({
+    page,
+  }) => {
+    const uniqueSuffix = Date.now();
+
+    await loginToAdmin(page);
+    await page.goto('/conversations', { waitUntil: 'networkidle' });
+
+    await expect(page.getByRole('heading', { name: '会话工作台' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '语音会话面板' })).toBeVisible();
+    const voicePanel = sectionByHeading(page, '语音会话面板');
+
+    await page.getByRole('button', { name: '开启语音会话' }).click();
+    await expect(voicePanel.getByRole('heading', { name: '语音会话详情' })).toBeVisible();
+    await expect(voicePanel.getByText(/voice-room-\d+/).first()).toBeVisible();
+    await expect(voicePanel.getByText('当前会话缺少客户或会话 id，无法创建语音会话')).toHaveCount(0);
+
+    await page.getByLabel('转写内容').fill(`用户咨询 iPhone 16 Pro 售后服务 ${uniqueSuffix}`);
+    await page.getByRole('button', { name: '保存转写' }).click();
+    await expect(page.getByText('已写入转写片段')).toBeVisible();
+
+    await page.getByLabel('接管原因').fill('语音识别需要人工确认售后网点');
+    await page.getByLabel('接管摘要').fill(`用户咨询授权维修网点，需人工回访 ${uniqueSuffix}`);
+    await page.getByRole('button', { name: '创建接管' }).click();
+    await expect(page.getByText('已创建转人工记录')).toBeVisible();
+  });
+
   test('runs the video service flow with browser media stubs', async ({ page }) => {
     const uniqueSuffix = Date.now();
     await mockVideoBrowserApis(page);

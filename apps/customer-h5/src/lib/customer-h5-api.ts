@@ -1,4 +1,9 @@
-import { aiServiceBaseUrl, messageGatewayHttpBaseUrl, platformApiBaseUrl } from './runtime-config';
+import {
+  aiServiceBaseUrl,
+  messageGatewayHttpBaseUrl,
+  platformApiBaseUrl,
+  voiceRealtimeServiceBaseUrl,
+} from './runtime-config';
 
 export interface CustomerProfileCreateInput {
   external_id: string;
@@ -90,6 +95,46 @@ export interface ConversationMessageRead {
 export interface ConversationMessagesResponse {
   conversation_id: string;
   items: ConversationMessageRead[];
+}
+
+export interface VoiceSessionStartInput {
+  conversation_id: number | string;
+  customer_profile_id: number | string;
+  livekit_room?: string | null;
+}
+
+export interface VoiceSessionBootstrapRead {
+  voice_session_id: number;
+  livekit_room: string | null;
+  status: string;
+}
+
+export interface VoiceTranscriptRead {
+  id: number;
+  voice_session_id: number;
+  speaker: string;
+  text: string;
+  normalized_text: string | null;
+  is_final: boolean;
+  start_ms: number | null;
+  end_ms: number | null;
+  created_at: string;
+}
+
+export interface VoiceTranscriptInput {
+  transcript_text: string;
+  speaker?: string;
+}
+
+export interface VoiceTurnRead {
+  decision: string;
+  transcript: string;
+  normalized_text: string;
+  answer: string | null;
+  clarification: string | null;
+  handoff: boolean;
+  audio_mime_type: string | null;
+  audio_duration_ms: number | null;
 }
 
 export interface AiDecisionRead {
@@ -214,6 +259,26 @@ async function aiRequestJson<T>(path: string, init: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function voiceRequestJson<T>(path: string, init: RequestInit): Promise<T> {
+  const response = await fetch(`${voiceRealtimeServiceBaseUrl}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init.headers ?? {}),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return (await response.json()) as T;
+}
+
 export async function createCustomerProfile(
   input: CustomerProfileCreateInput,
 ): Promise<CustomerProfileRead> {
@@ -301,4 +366,39 @@ export async function requestAiDecision({
 
 export async function getAiDecision(query: string): Promise<AiDecisionRead> {
   return requestAiDecision({ query, endpoint: 'answer' });
+}
+
+export async function startVoiceSession(
+  input: VoiceSessionStartInput,
+): Promise<VoiceSessionBootstrapRead> {
+  return voiceRequestJson<VoiceSessionBootstrapRead>('/sessions/start', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function appendVoiceTranscript(
+  voiceSessionId: number | string,
+  input: VoiceTranscriptInput,
+): Promise<VoiceTranscriptRead> {
+  return voiceRequestJson<VoiceTranscriptRead>(`/sessions/${voiceSessionId}/partial`, {
+    method: 'POST',
+    body: JSON.stringify({
+      speaker: input.speaker ?? 'customer',
+      transcript_text: input.transcript_text,
+    }),
+  });
+}
+
+export async function finalizeVoiceTurn(
+  voiceSessionId: number | string,
+  input: {
+    conversation_id: number | string;
+    transcript_text: string;
+  },
+): Promise<VoiceTurnRead> {
+  return voiceRequestJson<VoiceTurnRead>(`/sessions/${voiceSessionId}/finalize`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
 }

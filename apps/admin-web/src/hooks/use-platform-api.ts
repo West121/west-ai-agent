@@ -30,6 +30,14 @@ import {
   type SatisfactionCreateInput,
   type SatisfactionRecord,
   type ServiceAnalyticsOverview,
+  type VoiceAudioAsset,
+  type VoiceAudioAssetCreateInput,
+  type VoiceHandoff,
+  type VoiceHandoffCreateInput,
+  type VoiceSession,
+  type VoiceSessionCreateInput,
+  type VoiceTranscriptSegment,
+  type VoiceTranscriptSegmentCreateInput,
   type VideoRecording,
   type VideoRecordingListResponse,
   type VideoRecordingRetentionInput,
@@ -47,8 +55,17 @@ import {
   type TicketListResponse,
   type TicketUpdateInput,
   ApiError,
+  appendVoiceTranscript,
   clearStoredAccessToken,
+  createVoiceAudioAsset,
+  createVoiceHandoff,
+  createVoiceSession,
   getStoredAccessToken,
+  getVoiceAudioAssets,
+  getVoiceHandoffs,
+  getVoiceSession,
+  getVoiceSessions,
+  getVoiceTranscripts,
   normalizeAuthUsers,
   requestJson,
   setStoredAccessToken,
@@ -499,6 +516,117 @@ export function useConversationSatisfaction(conversationId: number | null | unde
     enabled: typeof conversationId === 'number',
     queryFn: () =>
       requestJson<SatisfactionRecord | null>(`/conversation/conversations/${conversationId}/satisfaction`),
+  });
+}
+
+export function useVoiceSessions(filters: {
+  conversationId?: number | null;
+  customerProfileId?: number | null;
+  status?: string | null;
+} = {}) {
+  return useQuery({
+    queryKey: [
+      'platform-api',
+      'voice',
+      'sessions',
+      filters.conversationId ?? null,
+      filters.customerProfileId ?? null,
+      filters.status ?? null,
+    ],
+    queryFn: async (): Promise<VoiceSession[]> => {
+      const payload = await getVoiceSessions(filters);
+      return payload.items ?? [];
+    },
+  });
+}
+
+export function useVoiceSession(voiceSessionId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['platform-api', 'voice', 'session', voiceSessionId],
+    enabled: typeof voiceSessionId === 'number',
+    queryFn: () => getVoiceSession(voiceSessionId!),
+  });
+}
+
+export function useVoiceTranscripts(voiceSessionId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['platform-api', 'voice', 'transcripts', voiceSessionId],
+    enabled: typeof voiceSessionId === 'number',
+    queryFn: async (): Promise<VoiceTranscriptSegment[]> => {
+      const payload = await getVoiceTranscripts(voiceSessionId!);
+      return payload.items ?? [];
+    },
+  });
+}
+
+export function useVoiceAudioAssets(voiceSessionId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['platform-api', 'voice', 'assets', voiceSessionId],
+    enabled: typeof voiceSessionId === 'number',
+    queryFn: async (): Promise<VoiceAudioAsset[]> => {
+      const payload = await getVoiceAudioAssets(voiceSessionId!);
+      return payload.items ?? [];
+    },
+  });
+}
+
+export function useVoiceHandoffs(voiceSessionId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['platform-api', 'voice', 'handoffs', voiceSessionId],
+    enabled: typeof voiceSessionId === 'number',
+    queryFn: async (): Promise<VoiceHandoff[]> => {
+      const payload = await getVoiceHandoffs(voiceSessionId!);
+      return payload.items ?? [];
+    },
+  });
+}
+
+export function useCreateVoiceSession() {
+  return useMutation({
+    mutationFn: (payload: VoiceSessionCreateInput) => createVoiceSession(payload),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'voice'] });
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'conversations'] });
+      queryClient.invalidateQueries({
+        queryKey: ['platform-api', 'conversation-summary', variables.conversation_id],
+      });
+    },
+  });
+}
+
+export function useAppendVoiceTranscript() {
+  return useMutation({
+    mutationFn: (variables: { voiceSessionId: number; payload: VoiceTranscriptSegmentCreateInput }) =>
+      appendVoiceTranscript(variables.voiceSessionId, variables.payload),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'voice', 'transcripts', variables.voiceSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'voice', 'session', variables.voiceSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'voice', 'sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'conversation-history'] });
+    },
+  });
+}
+
+export function useCreateVoiceAudioAsset() {
+  return useMutation({
+    mutationFn: (variables: { voiceSessionId: number; payload: VoiceAudioAssetCreateInput }) =>
+      createVoiceAudioAsset(variables.voiceSessionId, variables.payload),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'voice', 'assets', variables.voiceSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'voice', 'session', variables.voiceSessionId] });
+    },
+  });
+}
+
+export function useCreateVoiceHandoff() {
+  return useMutation({
+    mutationFn: (variables: { voiceSessionId: number; payload: VoiceHandoffCreateInput }) =>
+      createVoiceHandoff(variables.voiceSessionId, variables.payload),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'voice', 'handoffs', variables.voiceSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'voice', 'session', variables.voiceSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['platform-api', 'voice', 'sessions'] });
+    },
   });
 }
 

@@ -35,10 +35,12 @@ export function getStackConfig() {
   const platformApiPort = envInt('E2E_PLATFORM_API_PORT', 28000);
   const messageGatewayPort = envInt('E2E_MESSAGE_GATEWAY_PORT', 28010);
   const aiServicePort = envInt('E2E_AI_SERVICE_PORT', 28020);
+  const voiceRealtimeServicePort = envInt('E2E_VOICE_REALTIME_SERVICE_PORT', 28030);
   const adminWebPort = envInt('E2E_ADMIN_WEB_PORT', 48173);
   const customerH5Port = envInt('E2E_CUSTOMER_H5_PORT', 48174);
   const dataRoot = path.join(runtimeDir, 'data');
   const skipOpenSearch = envBool('E2E_SKIP_OPENSEARCH', false);
+  const reuseDockerStack = envBool('E2E_REUSE_DOCKER_STACK', false);
 
   return {
     rootDir,
@@ -53,14 +55,17 @@ export function getStackConfig() {
     platformApiPort,
     messageGatewayPort,
     aiServicePort,
+    voiceRealtimeServicePort,
     adminWebPort,
     customerH5Port,
     skipOpenSearch,
+    reuseDockerStack,
     urls: {
       platformApi: `http://127.0.0.1:${platformApiPort}`,
       messageGateway: `http://127.0.0.1:${messageGatewayPort}`,
       messageGatewayWs: `ws://127.0.0.1:${messageGatewayPort}/ws`,
       aiService: `http://127.0.0.1:${aiServicePort}`,
+      voiceRealtimeService: `http://127.0.0.1:${voiceRealtimeServicePort}`,
       adminWeb: `http://127.0.0.1:${adminWebPort}`,
       customerH5: `http://127.0.0.1:${customerH5Port}`,
     },
@@ -129,6 +134,17 @@ function serviceDefinitions(config) {
       readyUrl: `${config.urls.adminWeb}/auth`,
     },
     {
+      name: 'voice-realtime-service',
+      cwd: path.join(rootDir, 'services', 'voice-realtime-service'),
+      command: 'uv',
+      args: ['run', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(config.voiceRealtimeServicePort)],
+      env: {
+        VOICE_REALTIME_PLATFORM_API_BASE_URL: config.urls.platformApi,
+        VOICE_REALTIME_AI_SERVICE_BASE_URL: config.urls.aiService,
+      },
+      readyUrl: `${config.urls.voiceRealtimeService}/healthz`,
+    },
+    {
       name: 'customer-h5',
       cwd: path.join(rootDir, 'apps', 'customer-h5'),
       command: 'pnpm',
@@ -137,6 +153,7 @@ function serviceDefinitions(config) {
         VITE_PLATFORM_API_BASE_URL: config.urls.platformApi,
         VITE_MESSAGE_GATEWAY_WS_URL: config.urls.messageGatewayWs,
         VITE_AI_SERVICE_BASE_URL: config.urls.aiService,
+        VITE_VOICE_REALTIME_SERVICE_BASE_URL: config.urls.voiceRealtimeService,
       },
       readyUrl: `${config.urls.customerH5}/standalone`,
     },
@@ -200,6 +217,7 @@ function managedPorts(config) {
     config.platformApiPort,
     config.messageGatewayPort,
     config.aiServicePort,
+    config.voiceRealtimeServicePort,
     config.adminWebPort,
     config.customerH5Port,
   ];
@@ -352,10 +370,12 @@ export async function stopE2EStack(options = {}) {
   }
 
   if (options.keepCompose !== true) {
-    await run('docker', ['compose', '-f', composeFile, 'down'], {
-      cwd: rootDir,
-      env: composeEnv(config),
-    });
+    if (!config.reuseDockerStack) {
+      await run('docker', ['compose', '-f', composeFile, 'down'], {
+        cwd: rootDir,
+        env: composeEnv(config),
+      });
+    }
   }
 
   await freeManagedPorts(config);
@@ -368,11 +388,20 @@ export async function stopE2EStack(options = {}) {
 export async function startE2EStack() {
   const config = getStackConfig();
   await ensureRuntimeDir();
-  await stopE2EStack({ keepCompose: false }).catch(() => {});
-  await run('docker', ['compose', '-f', composeFile, 'up', '-d', '--wait'], {
-    cwd: rootDir,
-    env: composeEnv(config),
-  });
+  await stopE2EStack({ keepCompose: config.reuseDockerStack }).catch(() => {});
+  if (!config.reuseDockerStack) {
+    await run('docker', ['compose', '-f', composeFile, 'up', '-d', '--wait'], {
+      cwd: rootDir,
+      env: composeEnv(config),
+    });
+  } else {
+    await waitForTcpPort(config.postgresPort);
+    await waitForTcpPort(config.redisPort);
+    await waitForUrl(`http://127.0.0.1:${config.minioConsolePort}`);
+    if (!config.skipOpenSearch) {
+      await waitForUrl(`http://127.0.0.1:${config.opensearchHttpPort}`);
+    }
+  }
 
   const processes = [];
   for (const definition of serviceDefinitions(config)) {

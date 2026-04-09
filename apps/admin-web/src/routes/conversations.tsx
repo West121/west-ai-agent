@@ -14,6 +14,7 @@ import { useMessageGateway, type ChatMessage } from '@/hooks/use-message-gateway
 import { formatDateTime, formatDateTimeRelative } from '@/lib/format';
 import { ApiError } from '@/lib/platform-api';
 import { appendConversationMessage, getConversationMessages } from '@/lib/message-gateway';
+import { VoiceSessionPanel } from '@/components/voice-session-panel';
 
 function statusTone(status: string) {
   const normalized = status.toLowerCase();
@@ -466,6 +467,12 @@ export function ConversationsPage() {
                   </div>
                 ) : null}
               </div>
+
+              <VoiceSessionPanel
+                conversationId={selectedConversation.id}
+                customerProfileId={selectedConversation.customer_profile_id}
+                assignee={selectedConversation.assignee}
+              />
 
               <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between gap-3">

@@ -16,6 +16,7 @@ import {
   type ConversationSummaryRead,
   type CustomerProfileRead,
 } from '@/lib/customer-h5-api';
+import { VoiceComposer } from '@/components/voice-composer';
 import { formatMessageReadStatus, mergeChatMessages } from '@/lib/chat-message-utils';
 import { aiServiceBaseUrl, platformApiBaseUrl, messageGatewayWsUrl } from '@/lib/runtime-config';
 import { useMessageGateway } from '@/hooks/use-message-gateway';
@@ -449,6 +450,7 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
     [gateway.messages, historyMessages],
   );
   const effectiveConversationStatus = summaryQuery.data?.status ?? conversation?.status ?? null;
+  const activeCustomerProfileId = conversation?.customer_profile_id ?? customerProfile?.id ?? null;
   const conversationState = conversation ? `#${conversation.id} · ${effectiveConversationStatus ?? conversation.status}` : '未创建';
   const summaryRows = buildSummaryRows(summaryQuery.data);
   const hasMessages = combinedMessages.length > 0;
@@ -863,6 +865,14 @@ export function ChatWorkspace({ mode }: ChatWorkspaceProps) {
               创建会话后会自动连接 websocket。当前页面仅依赖平台 API 与 message-gateway。
             </p>
           )}
+
+          <div className="mt-3">
+            <VoiceComposer
+              conversationId={conversation?.id ?? null}
+              conversationStatus={effectiveConversationStatus}
+              customerProfileId={activeCustomerProfileId}
+            />
+          </div>
 
           {historyError ? (
             <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">

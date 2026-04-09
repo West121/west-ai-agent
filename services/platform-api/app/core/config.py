@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     app_cors_origins: list[str] = ["*"]
     app_default_admin_username: str = "admin"
     app_default_admin_password: str = "admin123"
+    app_internal_service_token: str = "dev-internal"
     app_bootstrap_default_admin: bool | None = None
     app_bootstrap_sample_data: bool | None = None
     app_minio_endpoint: str | None = None

@@ -8,6 +8,7 @@ from app.modules.exporting.models import ExportTask
 from app.modules.knowledge.models import KnowledgeDocument
 from app.modules.service.models import LeaveMessage, Ticket
 from app.modules.video.models import VideoSession, VideoSnapshot
+from app.modules.voice.models import VoiceAudioAsset, VoiceHandoffRecord, VoiceSession, VoiceTranscriptSegment
 
 __all__ = [
     "BlacklistEntry",
@@ -23,6 +24,10 @@ __all__ = [
     "Tag",
     "Ticket",
     "User",
+    "VoiceAudioAsset",
+    "VoiceHandoffRecord",
+    "VoiceSession",
+    "VoiceTranscriptSegment",
     "VideoSession",
     "VideoSnapshot",
 ]
